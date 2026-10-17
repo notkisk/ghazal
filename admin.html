@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>الغزال — مساحة المالكين</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="enhancements.css" />
+  <link rel="stylesheet" href="dashboard.css?v=20261008-6" />
+  <link rel="stylesheet" href="theme-white.css?v=20261015-3" />
+</head>
+<body class="admin-body">
+  <main id="owner-login" class="owner-login">
+    <div class="owner-login-mark">غ</div>
+    <p class="eyebrow">الغزال / مساحة خاصة</p>
+    <h1>دخول <em>المالكين</em></h1>
+    <p>هذه المساحة منفصلة عن متجر الغزال العام.</p>
+    <form id="owner-login-form"><label for="owner-email">البريد الإلكتروني</label><input id="owner-email" type="email" autocomplete="username" required placeholder="owner@example.com" /><label for="owner-code">كلمة المرور</label><input id="owner-code" type="password" autocomplete="current-password" required /><button class="button button-dark" type="submit">فتح لوحة الإدارة <span>↖</span></button><small id="owner-login-error" hidden>بيانات الدخول غير صحيحة أو الخادم غير متاح.</small></form>
+    <button id="owner-signup-toggle" class="text-button" type="button" hidden>إنشاء حساب المالك لأول مرة</button>
+    <form id="owner-signup-form" hidden><p class="owner-note">الحساب الأول يصبح حساب المالك. التسجيل يُغلق تلقائيًا بعد إنشائه.</p><label for="owner-signup-email">البريد الإلكتروني</label><input id="owner-signup-email" type="email" autocomplete="email" required placeholder="you@example.com" /><label for="owner-signup-password">كلمة مرور قوية</label><input id="owner-signup-password" type="password" autocomplete="new-password" minlength="12" required /><label for="owner-signup-confirm">تأكيد كلمة المرور</label><input id="owner-signup-confirm" type="password" autocomplete="new-password" minlength="12" required /><button class="button button-dark" type="submit">إنشاء حساب المالك <span>↖</span></button><button id="owner-signup-cancel" class="text-button" type="button">لدي حساب بالفعل</button><small id="owner-signup-error" hidden>تعذر إنشاء الحساب.</small></form>
+  </main>
+
+  <main id="owner-app" class="app-page wrap" hidden>
+    <header class="owner-header"><div><p class="eyebrow">الغزال / مساحة الإدارة <span id="owner-role-badge" class="role-badge">مستخدم</span></p><h1>لوحة <em>المكتبة</em></h1></div><div class="owner-actions"><a class="button button-outline" href="index.html">فتح المتجر <span>↗</span></a><button id="owner-logout" class="text-button" type="button">تسجيل الخروج</button></div></header>
+    <div class="stats-toolbar"><strong>إحصائيات الأداء</strong><select id="owner-stats-period"><option value="today">اليوم</option><option value="yesterday">أمس</option><option value="week" selected>هذا الأسبوع</option><option value="month">هذا الشهر</option><option value="all">كل الفترة</option><option value="custom">نطاق مخصص</option></select><label>من <input id="owner-stats-start" type="date" /></label><label>إلى <input id="owner-stats-end" type="date" /></label></div>
+    <div class="stat-grid"><article><span>الطلبات</span><strong id="owner-order-count">0</strong><small>ضمن الفترة</small></article><article data-owner-finance><span>المبيعات</span><strong id="owner-revenue">0 د.ج</strong><small>إجمالي الطلبات</small></article><article data-owner-finance><span>متوسط الطلب</span><strong id="owner-average-order">0 د.ج</strong><small>لكل طلب</small></article><article><span>الوحدات المباعة</span><strong id="owner-units-sold">0</strong><small>نسخة ضمن الطلبات</small></article><article><span>مؤكدة</span><strong id="owner-confirmed-count">0</strong><small>جاهزة للمراجعة والشحن</small></article><article><span>بانتظار الاتصال</span><strong id="owner-pending-count">0</strong><small>تحتاج متابعة العميل</small></article><article><span>مشتركو الرسالة</span><strong id="owner-newsletter-count">0</strong><small>عناوين محفوظة في قاعدة البيانات</small></article></div>
+    <section class="owner-grid"><article class="dashboard-card owner-main-card"><div class="dashboard-toolbar"><div><p class="eyebrow">مساحة العمل</p><h2>الفهرس <em>والطلبات</em></h2></div><div class="owner-actions"><button id="owner-export" class="button button-outline" type="button">تصدير Ecotrack <span>↙</span></button><button class="button button-dark" data-owner-form="book">إضافة مؤلف/كتاب</button><button class="button button-outline" data-owner-form="publisher">إضافة دار نشر</button><button class="button button-outline" data-owner-form="author">إضافة مؤلف</button></div></div><label id="owner-book-search-bar" class="admin-search owner-book-search-fixed"><span>⌕</span><input id="owner-book-search" type="search" placeholder="ابحث عن كتاب أو مؤلف أو دار نشر مباشرة" /></label><div class="admin-tabs"><button class="active" data-owner-tab="books">الكتب</button><button data-owner-tab="publishers">دور النشر</button><button data-owner-tab="authors">المؤلفون</button><button data-owner-tab="orders">الطلبات</button></div><div id="owner-list"></div></article></section>
+  </main>
+
+  <div class="overlay admin-overlay" id="owner-form-overlay" hidden><div class="form-panel" role="dialog" aria-modal="true"><button class="close-button" id="owner-form-close" aria-label="إغلاق">×</button><p class="eyebrow">الغزال / إضافة إلى الفهرس</p><h2 id="owner-form-title"></h2><form class="admin-form" id="owner-form"></form></div></div>
+  <script src="assets/templates/ecotrack-template.js"></script>
+  <script src="api.js"></script>
+  <script src="admin.js?v=20261008-29"></script>
+</body>
+</html>

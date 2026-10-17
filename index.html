@@ -3,14 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#e4d1ae" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="description" content="الغزال للكتب — كتب تستحق أن تُقرأ، وترجمات تفتح نوافذ على العالم." />
+    <meta property="og:title" content="الغزال للكتب" />
+    <meta property="og:description" content="كتب تستحق أن تُقرأ، وترجمات تفتح نوافذ على العالم." />
+    <meta property="og:image" content="assets/ghazal-logo.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://alghazal.books/" />
+    <meta property="og:locale" content="ar_DZ" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="الغزال للكتب" />
+    <meta name="twitter:description" content="كتب تستحق أن تُقرأ، وترجمات تفتح نوافذ على العالم." />
+    <link rel="canonical" href="https://alghazal.books/" />
+    <link rel="icon" href="assets/ghazal-mark.png" />
     <title>الغزال للكتب — بيتٌ للكتب التي تبقى</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="enhancements.css" />
+    <link rel="stylesheet" href="theme-white.css?v=20261015-3" />
   </head>
   <body>
     <div class="announcement"><span>رفوفٌ منتقاة بعناية لقارئٍ لا يكتفي بالعناوين</span><span class="announcement-mark">✦</span><span>كتبٌ تعيش معك طويلًا</span></div>
@@ -29,7 +41,6 @@
           <a href="#genre/literature">التصنيفات</a>
           <a href="#departments">الأقسام</a>
           <a href="#publishers">دور النشر</a>
-          <a href="#journal">من دفتر الغزال</a>
         </nav>
         <div class="header-actions">
           <button class="icon-button" id="search-open" aria-label="ابحث عن كتاب" title="ابحث عن كتاب"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg></button>
@@ -95,7 +106,6 @@
 
       <section class="publishers section-pad wrap" id="publishers"><div class="section-heading compact"><div><p class="eyebrow">شراكة مع صنّاع الكتاب</p><h2>إصدارات <em>دور النشر</em></h2></div><p class="publishers-intro">نحتفي بالناشرين الذين يوسّعون المكتبة العربية، كتابًا بعد كتاب.</p></div><div class="publisher-grid"><a class="publisher" href="#publisher/دار%20الآداب"><span class="publisher-monogram">ا</span><strong>دار الآداب</strong><small>بيروت · منذ ١٩٥٦</small></a><a class="publisher" href="#publisher/دار%20التنوير"><span class="publisher-monogram">ت</span><strong>دار التنوير</strong><small>كتب تضيء الطريق</small></a><a class="publisher" href="#publisher/دار%20المدى"><span class="publisher-monogram">م</span><strong>دار المدى</strong><small>الأدب والفكر والفنون</small></a><a class="publisher" href="#publisher/منشورات%20الجمل"><span class="publisher-monogram">ج</span><strong>منشورات الجمل</strong><small>أصوات من العالم</small></a></div></section>
 
-      <section class="journal" id="journal"><div class="wrap journal-inner"><div class="journal-image"><div class="journal-paper"><span>دفتر<br />الغزال</span><i>01</i></div><span class="journal-caption">هوامش على القراءة والحياة</span></div><div class="journal-copy"><p class="eyebrow">من دفتر الغزال / ٠١</p><h2>عن الكتب التي<br /><em>تجدنا في وقتها</em></h2><p>بعض الكتب نبحث عنها، وبعضها يصل إلينا حين نكون جاهزين لها. هنا نكتب عن القراءات التي تركت أثرًا، وعن متعة أن نصغي إلى عالم آخر.</p><a class="button button-outline" href="mailto:hello@alghazal.books?subject=من%20دفتر%20الغزال">راسلنا واقترح موضوعًا <span>↖</span></a></div></div></section>
 
       <section class="newsletter wrap"><div><p class="eyebrow">رسالة من رفوف الغزال</p><h2>كتاب جيّد،<br /><em>بين حينٍ وآخر.</em></h2></div><form id="newsletter-form"><label for="email">مختارات وقراءات تصل إلى بريدك بهدوء.</label><div class="email-field"><input id="email" type="email" required placeholder="بريدك الإلكتروني" autocomplete="email" /><button type="submit" aria-label="اشترك في الرسالة">↖</button></div><small id="newsletter-message">معاينة للاشتراك: يُحفظ البريد على هذا الجهاز فقط.</small></form></section>
     </main>
@@ -103,16 +113,22 @@
     <main id="app-pages" hidden>
       <section class="app-page wrap" id="catalog-page" aria-labelledby="catalog-title">
         <div class="page-hero"><div><p class="eyebrow">مكتبة الغزال / الفهرس الكامل</p><h1 id="catalog-title">كل <em>الكتب</em></h1><p>ابحث في الرفوف، صفِّ النتائج، وافتح صفحة أي كتاب لتعرف حكايته أكثر.</p></div></div>
-        <div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="catalog-search" type="search" placeholder="ابحث بالعنوان أو المؤلف أو دار النشر" /></label><select id="catalog-sort" aria-label="ترتيب الكتب"><option value="featured">ترتيب: مختارات الغزال</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option><option value="price-high">السعر: الأعلى أولًا</option></select></div>
+        <div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="catalog-search" type="search" placeholder="ابحث بالعنوان أو المؤلف أو دار النشر أو ISBN" /></label><select id="catalog-sort" aria-label="ترتيب الكتب"><option value="featured">ترتيب: مختارات الغزال</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option><option value="price-high">السعر: الأعلى أولًا</option></select></div>
         <div class="catalog-filters" id="catalog-filters"><button class="active" data-catalog-filter="all">كل الكتب</button><button data-catalog-filter="literature">الأدب العالمي</button><button data-catalog-filter="thought">الفكر والفلسفة</button><button data-catalog-filter="history">التاريخ والإنسانيات</button></div>
-        <div class="catalog-summary"><strong id="catalog-count"></strong><span>يمكنك فتح التفاصيل، حفظ الكتاب، أو إضافته إلى السلة.</span></div>
+        <div class="catalog-filter-panel" aria-label="فلاتر إضافية"><div class="catalog-filter-intro"><span class="filter-mark" aria-hidden="true">✦</span><div><strong>صفِّ رفوفك</strong><small>اختر دار النشر أو النوع أو نطاق السعر.</small></div></div><label>دار النشر<select id="catalog-publisher-filter"><option value="all">كل دور النشر</option></select></label><label>النوع<select id="catalog-genre-filter"><option value="all">كل الأنواع</option></select></label><label>السعر من<input id="catalog-price-min" type="number" min="0" step="100" placeholder="دج" inputmode="numeric" /></label><label>السعر إلى<input id="catalog-price-max" type="number" min="0" step="100" placeholder="دج" inputmode="numeric" /></label><button id="catalog-clear-filters" class="text-button" type="button">مسح الفلاتر</button></div>
+        <div class="catalog-summary"><strong id="catalog-count"></strong><span id="catalog-filter-summary">يمكنك فتح التفاصيل، حفظ الكتاب، أو إضافته إلى السلة.</span></div>
         <div class="catalog-grid" id="catalog-grid"></div><p class="empty-state" id="catalog-empty" hidden>لا توجد نتائج مطابقة. جرّب كلمة بحث أخرى أو أزل أحد الفلاتر.</p>
       </section>
 
+      <section class="app-page wrap" id="selections-page" aria-labelledby="selections-page-title"><div id="selections-page-content"></div></section>
+      <section class="app-page wrap" id="new-page" aria-labelledby="new-page-title"><div id="new-page-content"></div></section>
+      <section class="app-page wrap" id="departments-page" aria-labelledby="departments-page-title"><div id="departments-page-content"></div></section>
+      <section class="app-page wrap" id="publishers-page" aria-labelledby="publishers-page-title"><div id="publishers-page-content"></div></section>
       <section class="app-page wrap" id="book-page" aria-labelledby="book-page-title"><div id="book-page-content"></div></section>
       <section class="app-page wrap" id="publisher-page" aria-labelledby="publisher-page-title"><div id="publisher-page-content"></div></section>
       <section class="app-page wrap" id="author-page" aria-labelledby="author-page-title"><div id="author-page-content"></div></section>
       <section class="app-page wrap" id="genre-page" aria-labelledby="genre-page-title"><div id="genre-page-content"></div></section>
+      <section class="app-page wrap" id="collection-page" aria-labelledby="collection-page-title"><div id="collection-page-content"></div></section>
       <section class="app-page wrap" id="favorites-page" aria-labelledby="favorites-title"><div id="favorites-page-content"></div></section>
 
       <section class="app-page wrap" id="dashboard-page" aria-labelledby="dashboard-title" hidden>
@@ -123,11 +139,12 @@
       </section>
     </main>
 
-    <footer class="footer"><div class="wrap footer-main"><div class="footer-brand"><img src="assets/ghazal-logo.png" alt="" /><div><strong>الغزال للكتب</strong><p>مساحة صغيرة للأفكار الكبيرة.<br />وبيتٌ للكتب التي تبقى.</p></div></div><div class="footer-nav"><div><strong>استكشف</strong><a href="#selections">مختارات الغزال</a><a href="#new">وصل حديثًا</a><a href="#departments">الأقسام</a></div><div><strong>الغزال</strong><a href="#story">حكايتنا</a><a href="#publishers">دور النشر</a><a href="mailto:hello@alghazal.books">تواصل معنا</a></div></div></div><div class="wrap footer-bottom"><span>© ٢٠٢٦ الغزال للكتب. صُنعت بحبّ للقراءة.</span><span>اقرأ على مهل ✳</span></div></footer>
+    <footer class="footer"><div class="wrap footer-main"><div class="footer-brand"><img src="assets/ghazal-logo.png" alt="" /><div><strong>الغزال للكتب</strong><p>مساحة صغيرة للأفكار الكبيرة.<br />وبيتٌ للكتب التي تبقى.</p></div></div><div class="footer-nav"><div><strong>استكشف</strong><a href="#selections">مختارات الغزال</a><a href="#new">وصل حديثًا</a><a href="#departments">الأقسام</a></div><div><strong>الغزال</strong><a href="#story">حكايتنا</a><a href="#publishers">دور النشر</a><a href="policy.html">الخصوصية والشحن</a><a href="mailto:hello@alghazal.books">تواصل معنا</a></div></div></div><div class="wrap footer-bottom"><span>© ٢٠٢٦ الغزال للكتب. صُنعت بحبّ للقراءة.</span><span>اقرأ على مهل ✳</span></div></footer>
 
     <div class="overlay" id="search-overlay" hidden><div class="search-panel" role="dialog" aria-modal="true" aria-label="البحث عن كتاب"><button class="close-button" data-close="search-overlay" aria-label="إغلاق">×</button><p class="eyebrow">ما الذي تبحث عنه؟</p><label for="search-input">ابحث في رفوف الغزال</label><input id="search-input" type="search" placeholder="عنوان كتاب، كاتب، أو فكرة..." /><div id="search-results" class="search-results"></div></div></div>
     <div class="overlay drawer-overlay" id="cart-overlay" hidden><div class="cart-panel" role="dialog" aria-modal="true" aria-label="سلة الكتب"><div class="cart-header"><div><p class="eyebrow">من رفوفنا إلى رفّك</p><h2>سلة الكتب</h2></div><button class="close-button" data-close="cart-overlay" aria-label="إغلاق">×</button></div><div id="cart-items" class="cart-items"><p class="empty-cart">سلتك تنتظر كتابًا جيدًا.</p></div><div class="cart-footer"><p>اختر عناوينك المفضّلة، ثم راسلنا لإتمام الطلب.</p><a id="cart-order" class="button button-dark" href="mailto:hello@alghazal.books?subject=طلب%20كتب%20من%20الغزال">أرسل طلب الكتب <span>↖</span></a></div></div></div>
     <script src="data/algeria-communes-58-wilayas.js"></script>
-    <script src="script.js"></script>
+    <script src="api.js"></script>
+    <script src="script.js?v=20261008-8"></script>
   </body>
 </html>

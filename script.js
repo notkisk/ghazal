@@ -51,7 +51,7 @@ let books = [
   { id: 'art-of-loving', title: 'فن الحب', author: 'إريك فروم', publisher: 'طبعة عربية', category: 'thought', genre: 'فكر · إنسانيات', price: 1800, image: 'art-of-loving.jpg', note: 'قراءة في الحب بوصفه فنًا يحتاج إلى معرفة وممارسة وعناية.' },
   { id: 'brief-time', title: 'تاريخ موجز للزمان', author: 'ستيفن هوكينغ', publisher: 'دار التنوير', category: 'history', genre: 'علم · إنسانيات', price: 2900, image: 'brief-time.jpg', note: 'أسئلة الكون والزمن والثقوب السوداء في كتاب علمي صار من كلاسيكيات العصر.' },
 ];
-const publishers = [
+let publishers = [
   { id: 'adab', name: 'دار الآداب', city: 'بيروت', since: 'منذ ١٩٥٦', description: 'دار عربية عريقة احتضنت أصواتًا أدبية وفكرية لا تزال حاضرة في الذاكرة.', logo: 'ا' },
   { id: 'tanweer', name: 'دار التنوير', city: 'بيروت · القاهرة', since: 'كتب تضيء الطريق', description: 'إصدارات تنحاز إلى المعرفة الحرة، والترجمات التي توسّع أفق القارئ.', logo: 'ت' },
   { id: 'mada', name: 'دار المدى', city: 'دمشق · بيروت', since: 'الأدب والفكر والفنون', description: 'مشروع ثقافي عربي يعتني بالأدب والفكر والفنون والكتب المرجعية.', logo: 'م' },
@@ -64,22 +64,58 @@ const bookOverrides = new Map(customBooks.map(book => [book.id, book]));
 books = books.map(book => ({ ...book, ...(bookOverrides.get(book.id) || {}) }));
 customBooks.filter(book => !books.some(existing => existing.id === book.id)).forEach(book => books.push(book));
 books.forEach(book => { if (!Number.isFinite(Number(book.stock))) book.stock = 10; });
-const authorProfiles = readStorage('ghazal.authorProfiles.v1', {});
+let authorProfiles = readStorage('ghazal.authorProfiles.v1', {});
 let genres = {
   literature: { title: 'الأدب العالمي', description: 'حكايات تعبر الحدود، وأصوات تترك أثرًا بعد الصفحة الأخيرة.' },
   thought: { title: 'الفكر والفلسفة', description: 'أسئلة توسّع الأفق، وكتب تساعدنا على النظر من زاوية أخرى.' },
   history: { title: 'التاريخ والإنسانيات', description: 'لفهم ما كان، وما يكون، والإنسان في قلب الحكاية.' }
 };
 Object.assign(genres, readStorage('ghazal.genres.v1', {}));
-const byId = Object.fromEntries(books.map(book => [book.id, book]));
-window.addEventListener('storage', event => { if (event.key === 'ghazal.customBooks.v1' || event.key === 'ghazal.customPublishers.v1' || event.key === 'ghazal.genres.v1' || event.key === 'ghazal.discounts.v1') location.reload(); });
-const discounts = readStorage('ghazal.discounts.v1', []);
+let byId = Object.fromEntries(books.map(book => [book.id, book]));
+const defaultCollections = [
+  { id: 'collection-literature', slug: 'rwayat-wa-adab', title: 'روايات وأدب', description: 'حكايات تبقى معك بعد الصفحة الأخيرة.', bookIds: books.filter(book => book.category === 'literature').map(book => book.id), active: true, homepage: true },
+  { id: 'collection-thought', slug: 'falsafa-wa-fikr', title: 'فلسفة وفكر', description: 'أسئلة توسّع الأفق وتعيد ترتيب الداخل.', bookIds: books.filter(book => book.category === 'thought').map(book => book.id), active: true, homepage: true },
+  { id: 'collection-publishers', slug: 'ikhtiyarat-al-nashirin', title: 'اختيارات من دور النشر', description: 'كتب مختارة من ناشرين نحب مشروعهم.', bookIds: books.slice(0, 8).map(book => book.id), active: true, homepage: true }
+];
+let collections = readStorage('ghazal.collections.v1', defaultCollections);
+collections = collections.map(collection => ({ ...collection, bookIds: (collection.bookIds || []).filter(id => byId[id]) }));
+let featuredBookIds = readStorage('ghazal.featuredBooks.v1', ['meaning','letters','orientalism','meditations']);
+let bestSellerBookIds = [];
+let catalogBookGenres = [];
+let authorSpotlight = null;
+if (window.location.protocol !== 'file:') fetch('/api/collections').then(response => response.ok ? response.json() : null).then(payload => { if (payload?.collections?.length) { collections = payload.collections; if (document.readyState !== 'loading') { renderHomeShelves(); if (location.hash.startsWith('#collection/')) showRoute(); } } }).catch(() => {});
+window.addEventListener('storage', event => { if (event.key === 'ghazal.customBooks.v1' || event.key === 'ghazal.customPublishers.v1' || event.key === 'ghazal.genres.v1' || event.key === 'ghazal.discounts.v1' || event.key === 'ghazal.collections.v1') location.reload(); });
+let discounts = readStorage('ghazal.discounts.v1', []);
 let activeDiscountCode = '';
+function applyCatalogPayload(payload) {
+  if (!payload?.books?.length) return;
+  books = payload.books.map(book => ({ ...book, stock: Number(book.stock ?? book.available ?? 0) }));
+  byId = Object.fromEntries(books.map(book => [book.id, book]));
+  publishers = payload.publishers?.length ? payload.publishers : publishers;
+  genres = payload.genres || genres;
+  catalogBookGenres = payload.bookGenres || catalogBookGenres;
+  discounts = payload.discounts || [];
+  authorProfiles = payload.authorProfiles || authorProfiles;
+  collections = payload.collections?.length ? payload.collections : collections;
+  const storedFeatured = payload.featuredBookIds || [];
+  if (storedFeatured.length) featuredBookIds = storedFeatured;
+  bestSellerBookIds = payload.bestSellerBookIds || [];
+  authorSpotlight = payload.authorSpotlight || null;
+  renderFeaturedSelections(); renderMostRead(); renderHomeShelves();
+  if (location.hash === '#catalog') renderCatalogPage();
+  if (location.hash.startsWith('#collection/')) showRoute();
+}
+if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) window.GhazalAPI.catalog().then(applyCatalogPayload).catch(() => {});
+if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) {
+  const refreshLiveCatalog = () => window.GhazalAPI.catalog().then(applyCatalogPayload).catch(() => {});
+  setInterval(refreshLiveCatalog, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshLiveCatalog(); });
+}
 function discountFor(book, code = '') { return discounts.filter(discount => discount.active !== false && (code ? String(discount.code || '').trim().toUpperCase() === code.trim().toUpperCase() : !String(discount.code || '').trim()) && (discount.appliesToAll || (discount.bookIds || []).includes(book.id))).sort((a, b) => { const amount = item => item.type === 'fixed' ? Number(item.value || 0) : book.price * Number(item.value || 0) / 100; return amount(b) - amount(a); })[0] || null; }
 function discountedPrice(book, code = activeDiscountCode) { const discount = discountFor(book, code); if (!discount) return Number(book.price); const saving = discount.type === 'fixed' ? Number(discount.value || 0) : Number(book.price) * Number(discount.value || 0) / 100; return Math.max(0, Number(book.price) - saving); }
 function priceHtml(book) { const price = discountedPrice(book); return price < Number(book.price) ? `<s class="old-price">${money(book.price)}</s><strong class="sale-price">${money(price)}</strong>` : money(book.price); }
 const coverUrl = book => book.image?.startsWith('data:') ? book.image : `assets/covers/${book.image}`;
-const money = value => `${new Intl.NumberFormat('ar-DZ').format(value)} د.ج`;
+const money = value => `${new Intl.NumberFormat('ar-DZ-u-nu-latn').format(value)} د.ج`;
 const wilayas = `1|Adrar|1100|500,2|Chlef|800|400,3|Laghouat|800|400,4|Oum El Bouaghi|700|400,5|Batna|650|400,6|Béjaïa|700|400,7|Biskra|650|400,8|Béchar|1050|400,9|Blida|750|400,10|Bouira|750|400,11|Tamanrasset|1050|400,12|Tébessa|650|400,13|Tlemcen|800|400,14|Tiaret|800|400,15|Tizi Ouzou|750|400,16|Alger|600|400,17|Djelfa|800|400,18|Jijel|700|400,19|Sétif|700|400,20|Saïda|800|400,21|Skikda|700|400,22|Sidi Bel Abbès|800|400,23|Annaba|700|400,24|Guelma|700|400,25|Constantine|700|400,26|Médéa|750|400,27|Mostaganem|800|400,28|M'Sila|750|400,29|Mascara|800|400,30|Ouargla|750|400,31|Oran|850|400,32|El Bayadh|1000|500,33|Illizi|1400|700,34|Bordj Bou Arreridj|700|400,35|Boumerdès|750|400,36|El Tarf|700|400,37|Tindouf|1400|700,38|Tissemsilt|850|450,39|El Oued|450|350,40|Khenchela|700|400,41|Souk Ahras|700|400,42|Tipaza|750|400,43|Mila|700|400,44|Aïn Defla|850|450,45|Naâma|950|500,46|Aïn Témouchent|850|450,47|Ghardaïa|850|400,48|Relizane|850|450,49|Timimoun|1050|550,50|Bordj Badji Mokhtar|1800|800,51|Ouled Djellal|650|550,52|Beni Abbes|1050|550,53|In Salah|1350|750,54|In Guezzam|1350|750,55|Touggourt|650|400,56|Djanet|1800|800,57|El M'Ghair|650|500,58|El Meniaa|950|550`.split(',').map(row => {
   const [code, name, home, office] = row.split('|').map((value, index) => index < 2 ? value : Number(value));
   const service = { home, office };
@@ -94,6 +130,17 @@ const ECOTRACK_COLUMNS = [
 ];
 function readStorage(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
 function saveStorage(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage is optional in the demo. */ } }
+function trackMeta(eventName, params = {}) {
+  if (typeof window.fbq === 'function') window.fbq('track', eventName, params, params.event_id ? { eventID: params.event_id } : undefined);
+  window.dispatchEvent(new CustomEvent('ghazal:analytics', { detail: { eventName, params } }));
+}
+function installMetaPixel() {
+  const pixelId = String(document.documentElement.dataset.metaPixelId || readStorage('ghazal.metaPixelId', '')).trim();
+  if (!pixelId || typeof window.fbq === 'function') return;
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+  window.fbq('init', pixelId); window.fbq('track', 'PageView');
+}
+installMetaPixel();
 
 let cart = readStorage('ghazal.cart.v2', []).filter(item => byId[item.id] && Number.isInteger(item.qty) && item.qty > 0);
 let favorites = readStorage('ghazal.favorites.v2', []).filter(id => byId[id]);
@@ -231,9 +278,9 @@ document.body.insertAdjacentHTML('beforeend', `
     <div class="demo-notice"><span>✳</span> معاينة تجريبية: تُحفظ الطلبات على هذا الجهاز فقط، ولا تُرسل إلى متجر.</div>
     <div class="checkout-steps"><span data-step-label="1">١ · بيانات التوصيل</span><span data-step-label="2">٢ · مراجعة الطلب</span><span data-step-label="3">٣ · التأكيد</span></div>
     <div class="checkout-body">
-      <section class="checkout-step" data-step="1"><form id="checkout-form"><div class="field-pair"><label>الاسم واللقب <input name="customer" autocomplete="name" required minlength="3" placeholder="الاسم كما يظهر على الطرد" /></label><label>رقم الهاتف ١ <input name="phone" type="tel" autocomplete="tel" required minlength="10" maxlength="10" placeholder="05xxxxxxxx" /></label></div><div class="field-pair"><label>رقم الهاتف ٢ <input name="phone2" type="tel" autocomplete="tel" minlength="10" maxlength="10" placeholder="اختياري" /></label><label>الولاية <select name="wilayaCode" required>${wilayas.map(wilaya => `<option value="${wilaya.code}" ${wilaya.code === 16 ? 'selected' : ''}>${String(wilaya.code).padStart(2, '0')} — ${wilaya.name}</option>`).join('')}</select></label></div><label>البلدية <select name="commune" id="commune-select" autocomplete="address-level3" required disabled><option value="">جار تحميل البلديات…</option></select></label><label>عنوان التوصيل <textarea name="address" required minlength="8" rows="2" placeholder="الحي، الشارع، رقم المنزل وأقرب معلم"></textarea></label><label>رابط الموقع على الخريطة <input name="mapLink" type="url" placeholder="اختياري — https://maps.google.com/..." /></label><label>ملاحظات للناقل <textarea name="notes" rows="2" placeholder="اختياري"></textarea></label><fieldset class="delivery-field"><legend>نوع الشحن</legend><label><input type="radio" name="shipmentType" value="home" checked /><span><strong>إيصال للمنزل</strong><small id="home-shipping-price"></small></span></label><label><input type="radio" name="shipmentType" value="office" /><span><strong>استلام من المكتب (Stop Desk)</strong><small id="office-shipping-price"></small></span></label></fieldset><div class="payment-note"><span>◉</span><div><strong>الدفع نقدًا عند الاستلام</strong><small>سيُرسل المبلغ الإجمالي كقيمة التحصيل في ملف Ecotrack.</small></div></div><button class="button button-dark checkout-primary" type="submit">مراجعة الطلب <span>↖</span></button></form></section>
-      <section class="checkout-step" data-step="2" hidden><div id="checkout-review"></div><div class="checkout-actions"><button id="checkout-back" class="button button-outline" type="button">تعديل البيانات <span>→</span></button><button id="checkout-confirm" class="button button-dark" type="button">تأكيد الطلب التجريبي <span>↖</span></button></div></section>
-      <section class="checkout-step" data-step="3" hidden><div class="confirmation"><span class="confirmation-star">✳</span><h3>وصل طلبك إلى دفتر هذه المعاينة.</h3><p>هذا طلب تجريبي محفوظ في متصفحك. لا يُرسل تلقائيًا إلى متجر.</p><div id="order-receipt"></div><button id="checkout-done" class="button button-dark" type="button">العودة إلى الكتب <span>↖</span></button></div></section>
+      <section class="checkout-step" data-step="1"><form id="checkout-form"><div class="field-pair"><label>الاسم واللقب <input name="customer" autocomplete="name" required minlength="3" placeholder="الاسم كما يظهر على الطرد" /></label><label>رقم الهاتف ١ <input name="phone" type="tel" autocomplete="tel" required minlength="10" maxlength="10" placeholder="05xxxxxxxx" /></label></div><div class="field-pair"><label>رقم الهاتف ٢ <input name="phone2" type="tel" autocomplete="tel" minlength="10" maxlength="10" placeholder="اختياري" /></label><label>الولاية <select name="wilayaCode" required>${wilayas.map(wilaya => `<option value="${wilaya.code}" ${wilaya.code === 16 ? 'selected' : ''}>${String(wilaya.code).padStart(2, '0')} — ${wilaya.name}</option>`).join('')}</select></label></div><label>البلدية <select name="commune" id="commune-select" autocomplete="address-level3" required disabled><option value="">جار تحميل البلديات…</option></select></label><label>عنوان التوصيل <textarea name="address" rows="2" placeholder="اختياري — الحي، الشارع، رقم المنزل وأقرب معلم"></textarea></label><label>رابط الموقع على الخريطة <input name="mapLink" type="url" placeholder="اختياري — https://maps.google.com/..." /></label><label>ملاحظات للناقل <textarea name="notes" rows="2" placeholder="اختياري"></textarea></label><fieldset class="delivery-field"><legend>نوع الشحن</legend><label><input type="radio" name="shipmentType" value="home" checked /><span><strong>إيصال للمنزل</strong><small id="home-shipping-price"></small></span></label><label><input type="radio" name="shipmentType" value="office" /><span><strong>استلام من المكتب (Stop Desk)</strong><small id="office-shipping-price"></small></span></label></fieldset><div class="payment-note"><span>◉</span><div><strong>الدفع نقدًا عند الاستلام</strong><small>سيُرسل المبلغ الإجمالي كقيمة التحصيل في ملف Ecotrack.</small></div></div><button class="button button-dark checkout-primary" type="submit">مراجعة الطلب <span>↖</span></button></form></section>
+      <section class="checkout-step" data-step="2" hidden><div id="checkout-review"></div><div class="checkout-actions"><button id="checkout-back" class="button button-outline" type="button">تعديل البيانات <span>→</span></button><button id="checkout-confirm" class="button button-dark" type="button">تأكيد الطلب <span>↖</span></button></div></section>
+      <section class="checkout-step" data-step="3" hidden><div class="confirmation"><span class="confirmation-star">✳</span><h3>وصل طلبك إلى دفتر الغزال.</h3><p>احتفظ برقم الطلب لمتابعة حالته من أي جهاز.</p><div id="order-receipt"></div><label class="order-lookup">متابعة طلب سابق<input id="order-lookup-reference" placeholder="GZ-..." autocomplete="off" /><button id="order-lookup-button" class="button button-outline" type="button">بحث عن الطلب</button></label><p id="order-lookup-result" class="owner-note" aria-live="polite"></p><button id="checkout-done" class="button button-dark" type="button">العودة إلى الكتب <span>↖</span></button></div></section>
     </div>
   </div></div>`);
 $$('#checkout-form input[name="delivery"]').forEach(input => { input.checked = false; input.required = true; });
@@ -248,7 +295,7 @@ $('#apply-discount').addEventListener('click', () => { const code = $('#discount
 });
 
 function openProduct(id) {
-  if (byId[id]) location.hash = `#book/${encodeURIComponent(id)}`;
+  if (byId[id]) { location.hash = `#book/${encodeURIComponent(id)}`; trackMeta('ViewContent', { content_type: 'product', content_ids: [id], content_name: byId[id].title, value: Number(byId[id].price), currency: 'DZD' }); }
 }
 function flyBookToCart(button) {
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
@@ -298,6 +345,7 @@ document.addEventListener('click', event => {
     if (!byId[id]) return;
     flyBookToCart(add);
     changeQuantity(id, 1);
+    trackMeta('AddToCart', { content_type: 'product', content_ids: [id], content_name: byId[id].title, value: Number(byId[id].price), currency: 'DZD' });
     if (!$('#product-overlay').hidden) hideOverlay('product-overlay');
     toast(`أضفنا «${byId[id].title}» إلى سلتك`);
     $('#cart-open').classList.remove('cart-bump');
@@ -326,13 +374,14 @@ document.addEventListener('keydown', event => { if (event.key === 'Enter' || eve
 $('#cart-order').addEventListener('click', () => {
   if (!cart.length) return;
   checkoutStep = 1;
+  trackMeta('InitiateCheckout', { content_type: 'product', content_ids: cart.map(item => item.id), value: subtotal(), currency: 'DZD' });
   renderCheckoutStep();
   switchOverlay('cart-overlay', 'checkout-overlay');
 });
 const shippingRate = (wilayaCode, shipmentType) => { const wilaya = wilayaByCode[Number(wilayaCode)] || wilayaByCode[16]; return wilaya.rates.delivery[shipmentType] ?? wilaya.rates.delivery.home; };
 const selectedWilaya = code => wilayaByCode[Number(code)] || wilayaByCode[16];
 function updateShippingQuote() { const form = $('#checkout-form'); if (!form) return; const code = form.elements.wilayaCode.value; $('#home-shipping-price').textContent = `${money(shippingRate(code, 'home'))} — يصل إلى عنوانك`; $('#office-shipping-price').textContent = `${money(shippingRate(code, 'office'))} — استلام من المكتب`; }
-function populateCommunes() { const form = $('#checkout-form'); const select = $('#commune-select'); if (!form || !select) return; const code = String(form.elements.wilayaCode.value).padStart(2, '0'); const matches = communes.filter(commune => commune.wilaya_code === code); select.innerHTML = matches.length ? `<option value="">اختر البلدية</option>${matches.map(commune => `<option value="${commune.commune_name_ascii}">${commune.commune_name_ascii} — ${commune.commune_name} · ${commune.daira_name_ascii}</option>`).join('')}` : '<option value="">تعذر تحميل البلديات</option>'; select.disabled = matches.length === 0; }
+function populateCommunes() { const form = $('#checkout-form'); const select = $('#commune-select'); if (!form || !select) return; const code = String(form.elements.wilayaCode.value).padStart(2, '0'); const matches = communes.filter(commune => commune.wilaya_code === code); select.innerHTML = matches.length ? `<option value="">اختر البلدية</option>${matches.map(commune => `<option value="${commune.id}">${commune.commune_name_ascii} — ${commune.commune_name} · ${commune.daira_name_ascii || commune.daira_name || ''}</option>`).join('')}` : '<option value="">تعذر تحميل البلديات</option>'; select.disabled = matches.length === 0; }
 updateShippingQuote();
 populateCommunes();
 function renderCheckoutStep() {
@@ -356,29 +405,56 @@ $('#checkout-form').addEventListener('submit', async event => {
   const normalizePhone = value => String(value || '').replace(/[^\d]/g, '');
   data.phone = normalizePhone(data.phone);
   data.phone2 = normalizePhone(data.phone2);
+  form.elements.address.setCustomValidity('');
   if (!/^0[5-7]\d{8}$/.test(data.phone)) { form.elements.phone.setCustomValidity('أدخل رقمًا جزائريًا صحيحًا من 10 أرقام يبدأ بـ 05 أو 06 أو 07.'); form.elements.phone.reportValidity(); return; }
   form.elements.phone.setCustomValidity('');
   if (data.phone2 && !/^0[5-7]\d{8}$/.test(data.phone2)) { form.elements.phone2.setCustomValidity('أدخل رقمًا جزائريًا من 10 أرقام أو اترك الحقل فارغًا.'); form.elements.phone2.reportValidity(); return; }
   form.elements.phone2.setCustomValidity('');
   const wilaya = selectedWilaya(data.wilayaCode);
-  const commune = communes.find(item => item.wilaya_code === String(wilaya.code).padStart(2, '0') && (item.commune_name_ascii.toLocaleLowerCase() === data.commune.trim().toLocaleLowerCase() || item.commune_name === data.commune.trim()));
+  const commune = communes.find(item => item.wilaya_code === String(wilaya.code).padStart(2, '0') && String(item.id) === String(data.commune)) || communes.find(item => item.wilaya_code === String(wilaya.code).padStart(2, '0') && (item.commune_name_ascii.toLocaleLowerCase() === data.commune.trim().toLocaleLowerCase() || item.commune_name === data.commune.trim()));
   if (!commune) { form.elements.commune.setCustomValidity('اختر بلدية صحيحة من الولاية المحددة.'); form.elements.commune.reportValidity(); return; }
   form.elements.commune.setCustomValidity('');
   const shippingCost = shippingRate(wilaya.code, data.shipmentType);
-  checkoutData = { ...data, city: commune.commune_name_ascii, commune: commune.commune_name_ascii, communeArabic: commune.commune_name, daira: commune.daira_name_ascii, weight: 0, wilayaCode: wilaya.code, wilaya: wilaya.name, shippingCost, shipmentType: data.shipmentType, discountCode: activeDiscountCode, discountAmount: discountTotal() };
+  checkoutData = { ...data, communeId: commune.id, city: commune.commune_name_ascii, commune: commune.commune_name_ascii, communeArabic: commune.commune_name, daira: commune.daira_name_ascii || commune.daira_name || '', weight: 0, wilayaCode: wilaya.code, wilaya: wilaya.name, shippingCost, shipmentType: data.shipmentType, discountCode: activeDiscountCode, discountAmount: discountTotal() };
   const lines = cart.map(({ id, qty }) => `<div class="review-line"><span>${byId[id].title} <small>× ${qty}</small></span><strong>${money(discountedPrice(byId[id]) * qty)}</strong></div>`).join('');
   const discountLine = discountTotal() > 0 ? `<div class="review-line discount-line"><span>الخصم${activeDiscountCode ? ` (${activeDiscountCode})` : ''}</span><strong>− ${money(discountTotal())}</strong></div>` : '';
   $('#checkout-review').innerHTML = `<div class="review-block"><h3>كتبك المختارة</h3>${lines}${discountLine}<div class="review-line"><span>توصيل ${checkoutData.shipmentType === 'office' ? 'إلى المكتب' : 'إلى المنزل'}</span><strong>${money(shippingCost)}</strong></div><div class="review-line review-total"><span>الإجمالي عند الاستلام</span><strong>${money(subtotal() + shippingCost)}</strong></div></div><div class="review-block"><h3>التوصيل والدفع</h3><p id="review-address"></p><p>الولاية رقم ${wilaya.code} · ${checkoutData.shipmentType === 'office' ? 'استلام من المكتب (Stop Desk)' : 'إيصال إلى المنزل'}</p><p>الدفع نقدًا عند الاستلام</p></div>`;
-  $('#review-address').textContent = `${data.customer} · ${data.phone} · ${data.address}، ${data.city}، ${wilaya.name}`;
+  $('#review-address').textContent = `${data.customer} · ${data.phone} · ${data.address}، ${checkoutData.city}، ${wilaya.name}`;
   checkoutStep = 2;
   renderCheckoutStep();
   $('.checkout-panel').scrollTo({ top: 0, behavior: 'smooth' });
 });
 $('#checkout-form [name="phone"]').addEventListener('input', event => event.target.setCustomValidity(''));
 $('#checkout-back').addEventListener('click', () => { checkoutStep = 1; renderCheckoutStep(); });
-$('#checkout-confirm').addEventListener('click', () => {
+function checkoutErrorMessage(error) {
+  const code = String(error?.message || '');
+  if (code.includes('insufficient_stock')) return 'يبدو أن أحد الكتب لم يعد متوفرًا بالكمية المطلوبة. عدّل السلة وحاول مرة أخرى.';
+  if (code.includes('invalid_commune')) return 'تعذر مطابقة البلدية مع الولاية المختارة. اختر البلدية من القائمة نفسها ثم حاول مرة أخرى.';
+  if (code.includes('invalid_shipping')) return 'اكتب عنوان توصيل واضحًا من 8 أحرف على الأقل.';
+  if (code.includes('invalid_phone')) return 'تحقق من رقم الهاتف وأعد المحاولة.';
+  if (code.includes('request_timeout') || code.includes('request_failed')) return 'تعذر الاتصال بالمكتبة الآن. تحقق من اتصالك وحاول بعد لحظات.';
+  return 'تعذر حفظ الطلب الآن. لم يتم تأكيده، حاول مرة أخرى.';
+}
+$('#checkout-confirm').addEventListener('click', async () => {
   if (!checkoutData || !cart.length) return;
-  const reference = `GZ-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+  let reference = `GZ-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+  const metaEventId = window.crypto?.randomUUID?.() || `gz-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  let serverResult = null;
+  try {
+    serverResult = await window.GhazalAPI?.createOrder({
+      customer: { customer: checkoutData.customer, phone: checkoutData.phone, phone2: checkoutData.phone2 || '' },
+      items: cart.map(item => ({ id: item.id, qty: item.qty })),
+      shipping: { type: checkoutData.shipmentType, wilayaCode: Number(checkoutData.wilayaCode), wilaya: checkoutData.wilaya, communeId: Number(checkoutData.communeId), commune: checkoutData.city, address: checkoutData.address, price: checkoutData.shippingCost },
+      discountCode: checkoutData.discountCode || '', notes: checkoutData.notes || '', metaEventId
+    });
+    if (serverResult?.reference) reference = serverResult.reference;
+  } catch (error) {
+    if (window.location.protocol !== 'file:') { toast(checkoutErrorMessage(error)); console.error('checkout_failed', error); return; }
+  }
+  const serverTotal = serverResult?.total ?? subtotal() + checkoutData.shippingCost;
+  const serverSubtotal = serverResult?.subtotal ?? subtotal();
+  const serverDiscount = serverResult?.discount ?? discountTotal();
+  const serverDelivery = serverResult?.delivery ?? checkoutData.shippingCost;
   const ecotrackRow = {
     'reference commande': reference,
     'nom et prenom du destinataire*': checkoutData.customer,
@@ -390,7 +466,7 @@ $('#checkout-confirm').addEventListener('click', () => {
     'adresse de livraison*': checkoutData.address,
     'produit*': cart.map(({ id, qty }) => `${byId[id].title} x${qty}`).join(' + '),
     'poids (kg)': 0,
-    'montant du colis*': subtotal() + checkoutData.shippingCost,
+    'montant du colis*': serverTotal,
     'remarque': checkoutData.notes || '',
     'FRAGILE\n( si oui mettez OUI sinon laissez vide )': '',
     'ECHANGE\n( si oui mettez OUI sinon laissez vide )': '',
@@ -404,26 +480,28 @@ $('#checkout-confirm').addEventListener('click', () => {
     placedAt: new Date().toISOString(),
     customer: checkoutData,
     items: cart.map(item => ({ ...item })),
-    subtotal: subtotal(), delivery: checkoutData.shippingCost,
-    total: subtotal() + checkoutData.shippingCost,
-    payment: 'cash_on_delivery', shipmentType: checkoutData.shipmentType, discountCode: checkoutData.discountCode || '', discountAmount: checkoutData.discountAmount || 0, demo: true,
+    subtotal: serverSubtotal, discount: serverDiscount, delivery: serverDelivery,
+    total: serverTotal,
+    payment: 'cash_on_delivery', shipmentType: checkoutData.shipmentType, discountCode: checkoutData.discountCode || '', discountAmount: checkoutData.discountAmount || 0, demo: window.location.protocol === 'file:',
     shipping: { service: 'delivery', type: checkoutData.shipmentType, stopDesk: checkoutData.shipmentType === 'office', wilayaCode: checkoutData.wilayaCode, wilaya: checkoutData.wilaya, price: checkoutData.shippingCost },
     ecotrackRow,
     ecotrack: { columns: ECOTRACK_COLUMNS, values: ECOTRACK_COLUMNS.map(column => ecotrackRow[column]) }
   };
-  saveStorage('ghazal.demoOrders.v1', [order, ...readStorage('ghazal.demoOrders.v1', [])].slice(0, 20));
+  trackMeta('Purchase', { content_type: 'product', content_ids: order.items.map(item => item.id), value: order.total, currency: 'DZD', order_id: order.reference, event_id: metaEventId });
+  if (window.location.protocol === 'file:') saveStorage('ghazal.demoOrders.v1', [order, ...readStorage('ghazal.demoOrders.v1', [])].slice(0, 20));
   cart = [];
   syncCart();
-  $('#order-receipt').innerHTML = `<span>رقم الطلب التجريبي</span><strong dir="ltr">${order.reference}</strong><span>الإجمالي نقدًا عند الاستلام</span><strong>${money(order.total)}</strong>`;
+  $('#order-receipt').innerHTML = `<span>رقم الطلب</span><strong dir="ltr">${order.reference}</strong><span>الإجمالي نقدًا عند الاستلام</span><strong>${money(order.total)}</strong>`;
   checkoutStep = 3;
   renderCheckoutStep();
   $('.checkout-panel').scrollTo({ top: 0, behavior: 'smooth' });
 });
 $('#checkout-done').addEventListener('click', () => { hideOverlay('checkout-overlay'); document.getElementById('new').scrollIntoView({ behavior: 'smooth' }); });
+$('#order-lookup-button').addEventListener('click', async () => { const reference = $('#order-lookup-reference').value.trim(); if (!reference) return; try { const order = await window.GhazalAPI.lookupOrder(reference); $('#order-lookup-result').textContent = `الطلب ${order.reference}: ${order.status} · ${money(order.total)}`; } catch { $('#order-lookup-result').textContent = 'لم نعثر على طلب بهذا الرقم.'; } });
 
 $('#search-input').addEventListener('input', event => {
-  const query = event.target.value.trim().toLocaleLowerCase('ar');
-  const results = books.filter(book => `${book.title} ${book.author} ${book.publisher}`.toLocaleLowerCase('ar').includes(query));
+  const query = normalizeArabicSearch(event.target.value);
+  const results = books.filter(book => normalizeArabicSearch(`${book.title} ${book.author} ${book.publisher}`).includes(query));
   $('#search-results').innerHTML = query ? (results.length ? results.map(book => `<button class="search-result" data-search-id="${book.id}"><img src="${coverUrl(book)}" alt="" /><span><strong>${book.title}</strong><small>${book.author} · ${money(book.price)}</small></span><span>↖</span></button>`).join('') : '<p class="search-empty">لم نجد هذا العنوان. جرّب كلمة أخرى.</p>') : '<p class="search-empty">جرّب البحث عن كتاب أو اسم مؤلف.</p>';
 });
 $('#search-results').addEventListener('click', event => {
@@ -440,9 +518,20 @@ $$('.main-nav a').forEach(link => link.addEventListener('click', () => {
 }));
 $('#newsletter-form').addEventListener('submit', event => {
   event.preventDefault();
-  saveStorage('ghazal.demoNewsletter', $('#email').value.trim());
-  $('#newsletter-message').textContent = 'حُفظ بريدك في هذه المعاينة فقط. لم يُرسل الاشتراك.';
-  $('#email').value = '';
+  const email = $('#email').value.trim();
+  if (window.location.protocol === 'file:' || !window.GhazalAPI?.subscribeNewsletter) {
+    saveStorage('ghazal.demoNewsletter', email);
+    $('#newsletter-message').textContent = 'حُفظ بريدك في هذه المعاينة فقط.';
+    $('#email').value = '';
+    return;
+  }
+  const button = $('#newsletter-form button'); button.disabled = true;
+  window.GhazalAPI.subscribeNewsletter(email).then(() => {
+    $('#newsletter-message').textContent = 'تم تسجيل بريدك. سنرسل لك مختارات الغزال بهدوء.';
+    $('#newsletter-form').reset();
+  }).catch(error => {
+    $('#newsletter-message').textContent = String(error.message).includes('invalid_email') ? 'اكتب بريدًا إلكترونيًا صحيحًا.' : 'تعذر تسجيل البريد الآن. حاول مرة أخرى.';
+  }).finally(() => { button.disabled = false; });
 });
 
 function observeReveals() {
@@ -468,61 +557,103 @@ if (window.matchMedia('(hover:hover) and (prefers-reduced-motion:no-preference)'
 // The storefront pages use hash routes so the static demo remains deployable anywhere.
 const homeMain = document.querySelector('body > main:not(#app-pages)');
 const pagesRoot = $('#app-pages');
-const normalize = value => String(value || '').trim().toLocaleLowerCase('ar');
+const normalizeArabicSearch = value => String(value ?? '').normalize('NFKD').replace(/[\u064B-\u065F\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').toLocaleLowerCase('ar').trim();
+const normalize = normalizeArabicSearch;
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
+const predefinedBookGenres = ['الأدب العربي','الأدب العالمي','الرواية','القصص القصيرة','الشعر','المسرح','الفلسفة','علم النفس','علم الاجتماع','السياسة','التاريخ','السيرة الذاتية','الاقتصاد','العلوم','الفنون','التربية','التنمية الذاتية','الدين والفكر الإسلامي','أدب الأطفال','الرحلات'];
+const genreMatches = (book, selected) => selected === 'all' || normalizeArabicSearch(book.genre).includes(normalizeArabicSearch(selected));
 let catalogFilter = 'all';
 let catalogQuery = '';
 let catalogSort = 'featured';
+let catalogPublisher = 'all';
+let catalogGenre = 'all';
+let catalogPriceMin = '';
+let catalogPriceMax = '';
 let publisherQuery = '';
 let publisherFilter = 'all';
+let publisherGenre = 'all';
 let adminTab = 'books';
 
 function catalogResults() {
-  let result = books.filter(book => (catalogFilter === 'all' || book.category === catalogFilter) && (!catalogQuery || normalize(`${book.title} ${book.author} ${book.publisher}`).includes(normalize(catalogQuery))));
+  const query = normalize(catalogQuery);
+  const min = catalogPriceMin === '' ? null : Number(catalogPriceMin);
+  const max = catalogPriceMax === '' ? null : Number(catalogPriceMax);
+  let result = books.filter(book => {
+    const price = Number(book.price) || 0;
+    return (catalogFilter === 'all' || book.category === catalogFilter) &&
+      (catalogPublisher === 'all' || book.publisher === catalogPublisher) &&
+      genreMatches(book, catalogGenre) &&
+      (min === null || price >= min) && (max === null || price <= max) &&
+      (!query || normalize(`${book.title} ${book.author} ${book.publisher} ${book.genre} ${book.isbn || ''}`).includes(query));
+  });
+  if (catalogSort === 'featured') { const ranks = new Map((featuredBookIds || []).map((id, index) => [id, index])); result = [...result].sort((a, b) => (ranks.get(a.id) ?? 999) - (ranks.get(b.id) ?? 999)); }
   if (catalogSort === 'title') result = [...result].sort((a, b) => a.title.localeCompare(b.title, 'ar'));
   if (catalogSort === 'price-low') result = [...result].sort((a, b) => a.price - b.price);
   if (catalogSort === 'price-high') result = [...result].sort((a, b) => b.price - a.price);
   return result;
 }
 function renderCatalogPage() {
+  syncCatalogFilterOptions();
   const result = catalogResults();
   $('#catalog-grid').innerHTML = result.map(cardTemplate).join('');
   $('#catalog-count').textContent = `${new Intl.NumberFormat('ar-DZ').format(result.length)} كتاب`;
   $('#catalog-empty').hidden = result.length > 0;
   $$('#catalog-filters button').forEach(button => button.classList.toggle('active', button.dataset.catalogFilter === catalogFilter));
+  const active = [catalogPublisher !== 'all' ? catalogPublisher : '', catalogGenre !== 'all' ? catalogGenre : '', catalogPriceMin !== '' ? `من ${catalogPriceMin} دج` : '', catalogPriceMax !== '' ? `إلى ${catalogPriceMax} دج` : ''].filter(Boolean);
+  $('#catalog-filter-summary').textContent = active.length ? `الفلاتر النشطة: ${active.join(' · ')}` : 'يمكنك فتح التفاصيل، حفظ الكتاب، أو إضافته إلى السلة.';
   observeReveals();
+}
+function syncCatalogFilterOptions() {
+  const publisherSelect = $('#catalog-publisher-filter'); const genreSelect = $('#catalog-genre-filter');
+  if (!publisherSelect || !genreSelect) return;
+  const publishersList = [...new Set(books.map(book => String(book.publisher || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+  const genresList = [...new Set([...predefinedBookGenres, ...catalogBookGenres, ...books.map(book => String(book.genre || '').trim())].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+  publisherSelect.innerHTML = `<option value="all">كل دور النشر</option>${publishersList.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}`;
+  genreSelect.innerHTML = `<option value="all">كل الأنواع</option>${genresList.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}`;
+  publisherSelect.value = publishersList.includes(catalogPublisher) ? catalogPublisher : 'all';
+  genreSelect.value = genresList.includes(catalogGenre) ? catalogGenre : 'all';
+  catalogPublisher = publisherSelect.value; catalogGenre = genreSelect.value;
+  $('#catalog-price-min').value = catalogPriceMin; $('#catalog-price-max').value = catalogPriceMax;
 }
 function authorBooks(author) { return books.filter(book => book.author === author); }
 function publisherBooks(publisher) { return books.filter(book => book.publisher === publisher); }
 function publisherByName(name) { return publishers.find(publisher => publisher.name === name); }
 function renderProfileBooks(list, target) { target.innerHTML = list.length ? list.map(cardTemplate).join('') : '<p class="empty-state">لا توجد كتب مضافة بعد إلى هذا الملف.</p>'; }
 function relatedBooks(book) {
+  const genreTerms = new Set(normalizeArabicSearch(book.genre).split(/[·،,|/\s]+/).filter(term => term.length > 2));
+  const bestsellerRank = new Map((bestSellerBookIds || []).map((id, index) => [id, index]));
   return books.filter(candidate => candidate.id !== book.id).map(candidate => {
     let score = 0;
     if (candidate.author === book.author) score += 5;
     if (candidate.publisher === book.publisher) score += 3;
     if (candidate.category === book.category) score += 2;
-    if (candidate.genre === book.genre) score += 1;
+    if (candidate.genre === book.genre) score += 4;
+    const candidateTerms = normalizeArabicSearch(candidate.genre).split(/[·،,|/\s]+/).filter(term => term.length > 2);
+    score += candidateTerms.filter(term => genreTerms.has(term)).length * 2;
+    if (bestsellerRank.has(candidate.id)) score += Math.max(1, 4 - bestsellerRank.get(candidate.id));
+    if (Number(candidate.stock) > 0) score += 0.5;
     return { book: candidate, score };
-  }).sort((a, b) => b.score - a.score || a.book.title.localeCompare(b.book.title, 'ar')).slice(0, 4).map(item => item.book);
+  }).sort((a, b) => b.score - a.score || (bestsellerRank.get(a.book.id) ?? 999) - (bestsellerRank.get(b.book.id) ?? 999) || a.book.title.localeCompare(b.book.title, 'ar')).slice(0, 12).map(item => item.book);
 }
 function renderBookPage(id) {
   const book = byId[id];
   if (!book) { location.hash = '#catalog'; return; }
   const suggestions = relatedBooks(book);
   const available = Number(book.stock) > 0;
-  $('#book-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="book-detail"><div class="book-detail-cover"><img src="${coverUrl(book)}" alt="غلاف ${escapeHtml(book.title)}" /></div><div class="book-detail-copy"><p class="eyebrow">${escapeHtml(book.genre)} / صفحة الكتاب</p><h1 id="book-page-title">${escapeHtml(book.title)}</h1><p class="detail-author">بقلم <a href="#author/${encodeURIComponent(book.author)}">${escapeHtml(book.author)}</a> · <a href="#publisher/${encodeURIComponent(book.publisher)}">${escapeHtml(book.publisher)}</a></p><p class="detail-note">${escapeHtml(book.note)}</p><div class="detail-meta"><div><span>التصنيف الفرعي</span><strong>${escapeHtml(book.genre)}</strong></div><div><span>المؤلف</span><strong>${escapeHtml(book.author)}</strong></div><div><span>السعر</span><strong>${money(book.price)}</strong></div><div><span>التوفر</span><strong>${available ? 'متوفر' : 'غير متوفر حاليًا'}</strong></div></div>${available ? `<button class="button button-dark" data-add="${book.id}">أضف إلى السلة <span>↖</span></button>` : '<p class="stock-empty detail-stock-empty">هذا الكتاب غير متوفر حاليًا.</p>'}</div></div><section class="related-books"><div class="section-heading compact"><div><p class="eyebrow">اقتراح من رفوف الغزال</p><h2>قد يعجبك <em>أيضًا</em></h2></div><a class="underlined-link" href="#catalog">استكشف كل الكتب <span>↖</span></a></div><div class="catalog-grid">${suggestions.map(cardTemplate).join('')}</div></section>`;
+  $('#book-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="book-detail"><div class="book-detail-cover"><img src="${coverUrl(book)}" alt="غلاف ${escapeHtml(book.title)}" /></div><div class="book-detail-copy"><p class="eyebrow">${escapeHtml(book.genre)} / صفحة الكتاب</p><h1 id="book-page-title">${escapeHtml(book.title)}</h1><p class="detail-author">بقلم <a href="#author/${encodeURIComponent(book.author)}">${escapeHtml(book.author)}</a> · <a href="#publisher/${encodeURIComponent(book.publisher)}">${escapeHtml(book.publisher)}</a></p><p class="detail-note">${escapeHtml(book.note)}</p><div class="detail-meta"><div><span>التصنيف الفرعي</span><strong>${escapeHtml(book.genre)}</strong></div><div><span>المؤلف</span><strong>${escapeHtml(book.author)}</strong></div><div><span>السعر</span><strong>${money(book.price)}</strong></div><div><span>التوفر</span><strong>${available ? 'متوفر' : 'غير متوفر حاليًا'}</strong></div></div>${available ? `<button class="button button-dark" data-add="${book.id}">أضف إلى السلة <span>↖</span></button>` : '<p class="stock-empty detail-stock-empty">هذا الكتاب غير متوفر حاليًا.</p>'}</div></div><section class="related-books"><div class="section-heading compact"><div><p class="eyebrow">اقتراحات ذكية من رفوف الغزال</p><h2>قد يعجبك <em>أيضًا</em></h2></div><a class="underlined-link" href="#catalog">استكشف كل الكتب <span>↖</span></a></div><div id="related-books-carousel"></div></section>`;
   const detailPrice = $('#book-page-content .detail-meta div:nth-child(3) strong'); if (detailPrice) detailPrice.innerHTML = priceHtml(book);
   if (book.review) $('#book-page-content .detail-note').textContent = book.review;
+  renderShelfCarousel('related-books-carousel', `related-${book.id}`, suggestions);
   observeReveals();
 }
 function renderPublisherPage(name) {
   const publisher = publisherByName(name) || publishers[0];
-  publisherQuery = ''; publisherFilter = 'all';
+  publisherQuery = ''; publisherFilter = 'all'; publisherGenre = 'all';
   const logo = publisher.logo?.startsWith('data:') ? `<img src="${publisher.logo}" alt="شعار ${escapeHtml(publisher.name)}" />` : escapeHtml(publisher.logo || publisher.name.slice(0, 1));
-  $('#publisher-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى الفهرس</a><div class="profile-header"><div class="profile-logo" aria-hidden="true">${logo}</div><div><p class="eyebrow">دار نشر / ملف الناشر</p><h1 class="profile-title" id="publisher-page-title">${escapeHtml(publisher.name)}</h1><p>${escapeHtml(publisher.description)}</p><small>${escapeHtml(publisher.city)} · ${escapeHtml(publisher.since)}</small></div></div><div class="profile-books"><div class="card-heading"><h2>كتب <em>الدار</em></h2><span id="publisher-count" class="catalog-summary"></span></div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="publisher-search" type="search" placeholder="ابحث داخل إصدارات الدار" /></label><select id="publisher-sort" aria-label="ترتيب إصدارات الدار"><option value="featured">الأحدث</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option></select></div><div class="catalog-filters" id="publisher-filters"><button class="active" data-publisher-filter="all">كل الإصدارات</button><button data-publisher-filter="literature">الأدب</button><button data-publisher-filter="thought">الفكر والفلسفة</button><button data-publisher-filter="history">التاريخ والإنسانيات</button></div><div class="catalog-grid" id="publisher-books"></div></div>`;
-  const update = () => { let list = publisherBooks(publisher.name).filter(book => (publisherFilter === 'all' || book.category === publisherFilter) && (!publisherQuery || normalize(`${book.title} ${book.author}`).includes(normalize(publisherQuery)))); const sort = $('#publisher-sort').value; if (sort === 'title') list.sort((a,b) => a.title.localeCompare(b.title, 'ar')); if (sort === 'price-low') list.sort((a,b) => a.price - b.price); $('#publisher-count').textContent = `${list.length} إصدارات`; renderProfileBooks(list, $('#publisher-books')); $$('#publisher-filters button').forEach(button => button.classList.toggle('active', button.dataset.publisherFilter === publisherFilter)); };
-  $('#publisher-search').addEventListener('input', event => { publisherQuery = event.target.value; update(); }); $('#publisher-sort').addEventListener('change', update); $('#publisher-filters').addEventListener('click', event => { const button = event.target.closest('[data-publisher-filter]'); if (button) { publisherFilter = button.dataset.publisherFilter; update(); } }); update();
+  const publisherFilters = [{ value:'category:literature', label:'الأدب العالمي' }, { value:'category:thought', label:'الفكر والفلسفة' }, { value:'category:history', label:'التاريخ والإنسانيات' }, ...[...new Set([...predefinedBookGenres, ...catalogBookGenres, ...publisherBooks(publisher.name).map(book => book.genre).filter(Boolean)])].sort((a,b) => a.localeCompare(b, 'ar')).map(genre => ({ value:`genre:${genre}`, label:genre }))];
+  $('#publisher-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى الفهرس</a><div class="profile-header"><div class="profile-logo" aria-hidden="true">${logo}</div><div><p class="eyebrow">دار نشر / ملف الناشر</p><h1 class="profile-title" id="publisher-page-title">${escapeHtml(publisher.name)}</h1><p>${escapeHtml(publisher.description)}</p><small>${escapeHtml(publisher.city)} · ${escapeHtml(publisher.since)}</small></div></div><div class="profile-books"><div class="card-heading"><h2>كتب <em>الدار</em></h2><span id="publisher-count" class="catalog-summary"></span></div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="publisher-search" type="search" placeholder="ابحث داخل إصدارات الدار" /></label><select id="publisher-sort" aria-label="ترتيب إصدارات الدار"><option value="featured">الأحدث</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option></select></div><label class="publisher-genre-filter">التصنيف أو النوع<select id="publisher-genre-filter"><option value="all">كل الإصدارات</option>${publisherFilters.map(filter => `<option value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)}</option>`).join('')}</select></label><div class="catalog-grid" id="publisher-books"></div></div>`;
+  const update = () => { const [filterType, filterValue] = publisherGenre.split(':'); let list = publisherBooks(publisher.name).filter(book => (publisherGenre === 'all' || (filterType === 'category' ? book.category === filterValue : genreMatches(book, filterValue))) && (!publisherQuery || normalize(`${book.title} ${book.author} ${book.genre}`).includes(normalize(publisherQuery)))); const sort = $('#publisher-sort').value; if (sort === 'title') list.sort((a,b) => a.title.localeCompare(b.title, 'ar')); if (sort === 'price-low') list.sort((a,b) => a.price - b.price); $('#publisher-count').textContent = `${list.length} إصدارات`; renderProfileBooks(list, $('#publisher-books')); $('#publisher-genre-filter').value = publisherGenre; };
+  $('#publisher-search').addEventListener('input', event => { publisherQuery = event.target.value; update(); }); $('#publisher-sort').addEventListener('change', update); $('#publisher-genre-filter').addEventListener('change', event => { publisherGenre = event.target.value; update(); }); update();
 }
 function renderAuthorPage(name) {
   const list = authorBooks(name);
@@ -538,11 +669,52 @@ function renderGenrePage(category) {
   const update = () => { const result = books.filter(book => book.category === category && (!query || normalize(`${book.title} ${book.author} ${book.publisher}`).includes(normalize(query)))); $('#genre-count').textContent = `${result.length} كتاب`; $('#genre-books').innerHTML = result.map(cardTemplate).join(''); observeReveals(); };
   $('#genre-search').addEventListener('input', event => { query = event.target.value; update(); }); update();
 }
+function renderCollectionPage(slug) {
+  const collection = collections.find(item => item.slug === slug && item.active);
+  if (!collection) { location.hash = '#catalog'; return; }
+  const list = collection.bookIds.map(id => byId[id]).filter(Boolean);
+  $('#collection-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى الفهرس</a><div class="page-hero genre-hero collection-hero"><div><p class="eyebrow">الغزال / مجموعة مختارة</p><h1>${escapeHtml(collection.title)}</h1><p>${escapeHtml(collection.description || 'مجموعة كتب اختيرت لتجد طريقها إلى رفّك.')}</p></div><span class="collection-count">${list.length} كتب</span></div><div class="catalog-grid" id="collection-books"></div>`;
+  $('#collection-books').innerHTML = list.length ? list.map(cardTemplate).join('') : '<p class="empty-state">لا توجد كتب في هذه المجموعة بعد.</p>';
+  trackMeta('ViewContent', { content_type: 'product_group', content_name: collection.title, content_ids: list.map(book => book.id) });
+  observeReveals();
+}
 function renderFavoritesPage() {
   const savedBooks = favorites.map(id => byId[id]).filter(Boolean);
   $('#favorites-page-content').innerHTML = `<div class="page-hero favorites-hero"><div><p class="eyebrow">الغزال / رفّك الخاص</p><h1 id="favorites-title">محفوظاتي <em>المحبوبة</em></h1><p>كل كتاب لامس فضولك، محفوظ هنا على هذا الجهاز لتعود إليه متى شئت.</p></div><span class="favorites-count">${savedBooks.length} كتب</span></div><div class="catalog-grid" id="favorites-grid"></div><div class="empty-state" id="favorites-empty" hidden><p>لم تحفظ أي كتاب بعد.</p><a class="underlined-link" href="#catalog">استكشف الكتب <span>↖</span></a></div>`;
   $('#favorites-grid').innerHTML = savedBooks.map(cardTemplate).join('');
   $('#favorites-empty').hidden = savedBooks.length > 0;
+  observeReveals();
+}
+function renderSelectionsPage() {
+  const selected = [...new Set([...(featuredBookIds || []), 'meaning', 'letters', 'orientalism', 'meditations'])].map(id => byId[id]).filter(Boolean).slice(0, 8);
+  const spotlight = authorSpotlight ? `<article class="author-spotlight"><div class="author-spotlight-art">${authorSpotlight.photo ? `<img src="${authorSpotlight.photo.startsWith('data:') ? authorSpotlight.photo : escapeHtml(authorSpotlight.photo)}" alt="صورة ${escapeHtml(authorSpotlight.name)}" loading="lazy" />` : `<span>${escapeHtml(authorSpotlight.name).slice(0,1)}</span>`}</div><div class="author-spotlight-copy"><p class="eyebrow">إضاءة على مؤلف</p><h2>صوت <em>${escapeHtml(authorSpotlight.name)}</em></h2><p>${escapeHtml(authorSpotlight.bio || '')}</p><a class="underlined-link" href="#author/${encodeURIComponent(authorSpotlight.name)}">اكتشف ملف المؤلف ↖</a></div></article>` : '';
+  $('#selections-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / اختيارات المحرر</p><h1 id="selections-page-title">مختارات <em>الغزال</em></h1><p>اختيارات قابلة للتصفح والشراء، تتجدد من الفهرس الحقيقي للمكتبة.</p></div></div>${spotlight}<div class="catalog-grid">${selected.map(cardTemplate).join('')}</div>`;
+  observeReveals();
+}
+function renderMostRead() {
+  const target = $('.most-read-stage');
+  if (!target || !bestSellerBookIds.length) return;
+  const selected = bestSellerBookIds.map(id => byId[id]).filter(Boolean).slice(0, 3);
+  if (!selected.length) return;
+  const lead = selected[0]; const side = selected.slice(1);
+  target.innerHTML = `<div class="most-read-feature" data-view="${escapeHtml(lead.id)}"><span class="rank">01</span><img class="most-read-cover-image" src="${coverUrl(lead)}" alt="غلاف ${escapeHtml(lead.title)}" /><div class="rank-caption"><strong>${escapeHtml(lead.title)}</strong><small>${escapeHtml(lead.author)}</small></div></div><div class="most-read-side">${side.map((book, index) => `<div class="ranked-book" data-view="${escapeHtml(book.id)}"><span class="rank">0${index + 2}</span><img class="most-read-small-cover" src="${coverUrl(book)}" alt="غلاف ${escapeHtml(book.title)}" /><div><strong>${escapeHtml(book.title)}</strong><small>${escapeHtml(book.author)}</small></div></div>`).join('')}</div>`;
+  observeReveals();
+}
+function renderNewPage() {
+  $('#new-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / الرفوف الجديدة</p><h1 id="new-page-title">وصل <em>حديثًا</em></h1><p>كل الكتب المتاحة في الفهرس، مع إمكانية فتح التفاصيل أو الإضافة إلى السلة.</p></div></div><div class="catalog-grid">${books.map(cardTemplate).join('')}</div>`;
+  observeReveals();
+}
+function renderDepartmentsPage() {
+  const bestsellerIds = bestSellerBookIds.length ? bestSellerBookIds : ['solitude', 'letters', 'meditations'];
+  $('#departments-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / تصفّح هادئ</p><h1 id="departments-page-title">الأقسام <em>والأبواب</em></h1><p>اختر مسارًا واضحًا إلى الكتب التي تناسب فضولك.</p></div></div><div class="department-links page-department-links">${Object.entries(genres).map(([id, genre], index) => `<a href="#genre/${encodeURIComponent(id)}"><span class="dep-num">${String(index + 1).padStart(2, '0')}</span><span>${escapeHtml(genre.title)}<small>${escapeHtml(genre.description)}</small></span><b>↖</b></a>`).join('')}</div><div class="section-heading compact page-subheading"><div><p class="eyebrow">من رفوف القراء</p><h2>الأكثر <em>قراءةً</em></h2></div></div><div class="catalog-grid">${bestsellerIds.map(id => byId[id]).filter(Boolean).slice(0, 8).map(cardTemplate).join('')}</div>`;
+  observeReveals();
+}
+function renderPublishersPage() {
+  $('#publishers-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / شركاء الكتاب</p><h1 id="publishers-page-title">دور <em>النشر</em></h1><p>اكتشف مشاريع الناشرين والكتب المتاحة من كل دار.</p></div></div><div class="publisher-grid page-publisher-grid">${publishers.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${escapeHtml(publisher.logo || publisher.name.slice(0,1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('')}</div>`;
+  observeReveals();
+}
+function renderJournalPage() {
+  $('#journal-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / قراءة أبعد</p><h1 id="journal-page-title">من دفتر <em>الغزال</em></h1><p>مساحة مستقلة للقصص والقراءات والهوامش التي ترافق الكتب.</p></div></div><article class="journal-page-story"><div class="journal-image"><div class="journal-paper"><span>دفتر<br />الغزال</span><i>01</i></div></div><div><p class="eyebrow">عن الكتب التي تجدنا في وقتها</p><h2>بعض الكتب نبحث عنها، وبعضها يصل إلينا حين نكون جاهزين لها.</h2><p>نكتب هنا عن القراءات التي تركت أثرًا، وعن متعة أن نصغي إلى عالم آخر. ستتوسع هذه المساحة بمقالات ومراجعات جديدة من فريق الغزال.</p><a class="button button-outline" href="mailto:hello@alghazal.books?subject=من%20دفتر%20الغزال">راسلنا واقترح موضوعًا <span>↖</span></a></div></article>`;
   observeReveals();
 }
 function renderAdminList() {
@@ -560,20 +732,30 @@ function renderDashboard() {
 function showRoute() {
   const hash = decodeURIComponent(location.hash.slice(1) || 'home');
   const [route, ...parts] = hash.split('/');
-  const isPage = ['catalog', 'book', 'publisher', 'author', 'genre', 'favorites'].includes(route);
+  const isPage = ['catalog', 'selections', 'new', 'departments', 'publishers', 'book', 'publisher', 'author', 'genre', 'collection', 'favorites'].includes(route);
   homeMain.hidden = isPage; pagesRoot.hidden = !isPage;
   $$('.app-page', pagesRoot).forEach(page => { page.hidden = page.id !== `${route}-page`; });
   if (route === 'catalog') renderCatalogPage();
+  if (route === 'selections') renderSelectionsPage();
+  if (route === 'new') renderNewPage();
+  if (route === 'departments') renderDepartmentsPage();
+  if (route === 'publishers') renderPublishersPage();
   if (route === 'book') renderBookPage(parts.join('/'));
   if (route === 'publisher') renderPublisherPage(parts.join('/'));
   if (route === 'author') renderAuthorPage(parts.join('/'));
   if (route === 'genre') renderGenrePage(parts[0]);
+  if (route === 'collection') renderCollectionPage(parts.join('/'));
   if (route === 'favorites') renderFavoritesPage();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 $('#catalog-search').addEventListener('input', event => { catalogQuery = event.target.value; renderCatalogPage(); });
 $('#catalog-sort').addEventListener('change', event => { catalogSort = event.target.value; renderCatalogPage(); });
 $('#catalog-filters').addEventListener('click', event => { const button = event.target.closest('[data-catalog-filter]'); if (button) { catalogFilter = button.dataset.catalogFilter; renderCatalogPage(); } });
+$('#catalog-publisher-filter').addEventListener('change', event => { catalogPublisher = event.target.value; renderCatalogPage(); });
+$('#catalog-genre-filter').addEventListener('change', event => { catalogGenre = event.target.value; renderCatalogPage(); });
+$('#catalog-price-min').addEventListener('input', event => { catalogPriceMin = event.target.value; renderCatalogPage(); });
+$('#catalog-price-max').addEventListener('input', event => { catalogPriceMax = event.target.value; renderCatalogPage(); });
+$('#catalog-clear-filters').addEventListener('click', () => { catalogFilter = 'all'; catalogPublisher = 'all'; catalogGenre = 'all'; catalogPriceMin = ''; catalogPriceMax = ''; catalogQuery = ''; $('#catalog-search').value = ''; renderCatalogPage(); });
 $$('[data-admin-tab]').forEach(button => button.addEventListener('click', () => { adminTab = button.dataset.adminTab; $$('.admin-tabs button').forEach(item => item.classList.toggle('active', item === button)); renderAdminList(); }));
 window.addEventListener('hashchange', showRoute);
 
@@ -604,19 +786,51 @@ function exportEcotrackCsv() {
 }
 function renderFeaturedSelections() {
   const target = $('.featured-layout'); if (!target) return;
-  const defaults = ['meaning', 'letters', 'orientalism', 'meditations']; const stored = readStorage('ghazal.featuredBooks.v1', defaults); const selected = [...stored, ...defaults, ...books.map(book => book.id)].filter((id, index, ids) => ids.indexOf(id) === index).map(id => byId[id]).filter(Boolean).slice(0, 4); if (!selected.length) return;
+  const defaults = ['meaning', 'letters', 'orientalism', 'meditations']; const stored = featuredBookIds || defaults; const selected = [...stored, ...defaults, ...books.map(book => book.id)].filter((id, index, ids) => ids.indexOf(id) === index).map(id => byId[id]).filter(Boolean).slice(0, 4); if (!selected.length) return;
   const lead = selected[0]; const rest = selected.slice(1);
   target.innerHTML = `<article class="feature-story"><div class="feature-book-stage"><button class="feature-selection-cover" data-view="${lead.id}" aria-label="افتح تفاصيل ${escapeHtml(lead.title)}"><img src="${coverUrl(lead)}" alt="غلاف ${escapeHtml(lead.title)}" /></button><span class="stage-index">G / 01</span></div><div class="feature-description"><div><span class="category-label">${escapeHtml(lead.genre || 'مختارات الغزال')}</span><h3 data-view="${lead.id}" tabindex="0">${escapeHtml(lead.title)}</h3><p>${escapeHtml(lead.review || lead.note || 'كتاب مختار من رفوف الغزال.')}</p></div>${Number(lead.stock) > 0 ? `<button class="round-add" data-add="${lead.id}" aria-label="أضف ${escapeHtml(lead.title)} إلى السلة">↖</button>` : '<span class="stock-empty">غير متوفر حاليًا</span>'}</div></article><div class="selection-list">${rest.map((book, index) => `<article class="selection-item"><span class="item-number">${String(index + 1).padStart(2, '0')}</span><button class="selection-cover-button" data-view="${book.id}" aria-label="افتح تفاصيل ${escapeHtml(book.title)}"><img class="selection-cover-image" src="${coverUrl(book)}" alt="غلاف ${escapeHtml(book.title)}" /></button><div class="selection-info"><span class="category-label">${escapeHtml(book.genre || 'مختارات')}</span><h3 data-view="${book.id}" tabindex="0">${escapeHtml(book.title)}</h3><p>${escapeHtml(book.author)}</p>${Number(book.stock) > 0 ? `<button class="item-link" data-add="${book.id}">أضف إلى رفّك <span>↖</span></button>` : '<span class="stock-empty">غير متوفر حاليًا</span>'}</div></article>`).join('')}</div>`;
 }
 function renderHomeShelves() {
-  if (!$('.most-read') || $('#home-book-shelves')) return;
-  $('.most-read').insertAdjacentHTML('beforebegin', `<section class="home-book-shelves section-pad wrap" id="home-book-shelves"><div class="section-heading compact"><div><p class="eyebrow">تجوّل بين الرفوف</p><h2>كتبٌ <em>قد تناسبك</em></h2></div><a class="underlined-link" href="#catalog">افتح الفهرس الكامل <span>↖</span></a></div><div class="home-shelf-block"><div class="home-shelf-heading"><h3>اختيارات أخرى</h3><p>عناوين تستحق أن تجد طريقها إلى رفّك.</p></div><div class="catalog-grid" id="home-recommended-grid"></div></div><div class="home-shelf-block home-offer-shelf"><div class="home-shelf-heading"><h3>عروض الرف</h3><p>خصومات مختارة بهدوء، ما دامت متاحة.</p></div><div class="catalog-grid" id="home-discount-grid"></div></div></section>`);
-  const featuredIds = new Set(readStorage('ghazal.featuredBooks.v1', ['meaning', 'letters', 'orientalism', 'meditations']));
-  const recommended = books.filter(book => !featuredIds.has(book.id)).slice(0, 4);
-  const discounted = books.filter(book => discountFor(book)).slice(0, 4);
-  $('#home-recommended-grid').innerHTML = recommended.map(cardTemplate).join('');
-  $('#home-discount-grid').innerHTML = (discounted.length ? discounted : books.filter(book => !recommended.includes(book)).slice(0, 4)).map(cardTemplate).join('');
+  if (!$('.most-read')) return;
+  if (!$('#home-book-shelves')) $('.most-read').insertAdjacentHTML('beforebegin', `<section class="home-book-shelves section-pad wrap" id="home-book-shelves"><div class="section-heading compact"><div><p class="eyebrow">تجوّل بين الرفوف</p><h2>كتبٌ <em>قد تناسبك</em></h2></div><a class="underlined-link" href="#catalog">افتح الفهرس الكامل <span>↖</span></a></div><div class="home-shelf-block home-bestseller-shelf"><div class="home-shelf-heading"><div><h3>الأكثر قراءة الآن</h3><p>عناوين تعود إليها الأيدي مرة بعد مرة.</p></div><a class="underlined-link" href="#catalog">كل الكتب ↖</a></div><div id="home-bestseller-grid"></div></div><div id="home-author-spotlight"></div><div id="home-collection-shelves"></div><div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>مختارات الغزال</h3><p>كتب نعود إليها ونرشحها للقارئ الذي لم يجد طريقه بعد.</p></div><a class="underlined-link" href="#selections">رؤية المختارات ↖</a></div><div id="home-editorial-grid"></div></div><div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>قراءة جميلة بسعر هادئ</h3><p>اختيارات تبدأ من رفّك دون أن تثقل الميزانية.</p></div><a class="underlined-link" href="#catalog">تصفح حسب السعر ↖</a></div><div id="home-value-grid"></div></div></section>`);
+  const featuredIds = new Set(featuredBookIds || ['meaning', 'letters', 'orientalism', 'meditations']);
+  const homepageCollections = collections.filter(collection => collection.active && collection.homepage).slice(0, 4);
+  const fallback = { id: 'collection-recommended', slug: 'recommended', title: 'اختيارات أخرى', description: 'عناوين تستحق أن تجد طريقها إلى رفّك.', bookIds: books.filter(book => !featuredIds.has(book.id)).map(book => book.id) };
+  const recommended = books.filter(book => !featuredIds.has(book.id)).slice(0, 8);
+  const shelves = homepageCollections.length ? homepageCollections : [fallback];
+  const spotlightBooks = authorSpotlight ? authorSpotlight.bookIds.map(id => byId[id]).filter(Boolean) : [];
+  $('#home-author-spotlight').innerHTML = authorSpotlight ? `<article class="author-spotlight"><div class="author-spotlight-art">${authorSpotlight.photo ? `<img src="${authorSpotlight.photo.startsWith('data:') ? authorSpotlight.photo : escapeHtml(authorSpotlight.photo)}" alt="${escapeHtml(authorSpotlight.name)}" loading="lazy" />` : `<span>${escapeHtml(authorSpotlight.name).slice(0,1)}</span>`}</div><div class="author-spotlight-copy"><p class="eyebrow">من رفوف الغزال</p><h2>صوت <em>${escapeHtml(authorSpotlight.name)}</em></h2><p>${escapeHtml(authorSpotlight.bio)}</p><a class="underlined-link" href="#author/${encodeURIComponent(authorSpotlight.name)}">اكتشف كتبه (${spotlightBooks.length}) ↖</a></div><div class="author-spotlight-books">${spotlightBooks.slice(0,3).map(cardTemplate).join('')}</div></article>` : '';
+  $('#home-collection-shelves').innerHTML = shelves.map((collection, index) => `<div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>${escapeHtml(collection.title)}</h3><p>${escapeHtml(collection.description || '')}</p></div><a class="underlined-link" href="#collection/${encodeURIComponent(collection.slug)}">عرض المجموعة ↖</a></div><div id="home-collection-grid-${index}"></div></div>`).join('');
+  shelves.forEach((collection, index) => renderShelfCarousel(`home-collection-grid-${index}`, `collection-${index}`, collection.bookIds.map(id => byId[id]).filter(Boolean).slice(0, 8)));
+  const bestsellers = bestSellerBookIds.map(id => byId[id]).filter(Boolean);
+  renderShelfCarousel('home-bestseller-grid', 'bestsellers', bestsellers.length ? bestsellers : recommended);
+  const editorial = (featuredBookIds || []).map(id => byId[id]).filter(Boolean);
+  renderShelfCarousel('home-editorial-grid', 'editorial', editorial.length ? editorial : recommended);
+  renderShelfCarousel('home-value-grid', 'value', [...books].sort((a, b) => Number(a.price) - Number(b.price)));
+  observeReveals();
 }
+const homeCarouselTimers = new Map();
+function renderShelfCarousel(targetId, carouselId, list) {
+  const target = document.getElementById(targetId); if (!target) return;
+  const booksForShelf = list.filter(Boolean);
+  target.innerHTML = `<div class="home-carousel" data-carousel="${carouselId}"><button dir="ltr" class="home-carousel-button home-carousel-prev" type="button" data-carousel-prev="${carouselId}" aria-label="الكتب السابقة"></button><div class="home-carousel-viewport"><div class="home-carousel-track">${booksForShelf.map(cardTemplate).join('')}</div></div><button dir="ltr" class="home-carousel-button home-carousel-next" type="button" data-carousel-next="${carouselId}" aria-label="الكتب التالية"></button><div class="home-carousel-indicator" aria-live="polite"><span>1 / ${booksForShelf.length}</span><i><b></b></i></div></div>`;
+  const carousel = target.querySelector('.home-carousel'); const viewport = carousel?.querySelector('.home-carousel-viewport');
+  if (!carousel || !viewport) return;
+  carousel.classList.toggle('is-static', booksForShelf.length <= 4);
+  const updateIndicator = () => { const card = viewport.querySelector('.book-card'); const label = carousel.querySelector('.home-carousel-indicator span'); const fill = carousel.querySelector('.home-carousel-indicator b'); if (!card || !label || !fill) return; const end = viewport.scrollWidth - viewport.clientWidth; const index = Math.round(viewport.scrollLeft / (card.getBoundingClientRect().width + 20)); label.textContent = `${Math.min(index + 1, booksForShelf.length)} / ${booksForShelf.length}`; fill.style.width = `${end > 0 ? Math.min(100, (viewport.scrollLeft / end) * 100) : 100}%`; };
+  const advance = () => { const card = viewport.querySelector('.book-card'); if (!card) return; const distance = card.getBoundingClientRect().width + 20; const end = viewport.scrollWidth - viewport.clientWidth; viewport.scrollTo({ left: viewport.scrollLeft <= 4 ? end : Math.max(viewport.scrollLeft - distance, 0), behavior:'smooth' }); };
+  viewport.addEventListener('scroll', updateIndicator, { passive:true }); updateIndicator();
+  clearInterval(homeCarouselTimers.get(carouselId));
+  homeCarouselTimers.set(carouselId, booksForShelf.length > 4 ? setInterval(advance, 4200) : null);
+}
+document.addEventListener('click', event => {
+  const next = event.target.closest('[data-carousel-next], [data-carousel-prev]'); if (!next) return;
+  const carousel = next.closest('.home-carousel'); const viewport = carousel?.querySelector('.home-carousel-viewport'); const card = viewport?.querySelector('.book-card'); if (!viewport || !card) return;
+  const distance = card.getBoundingClientRect().width + 20; const end = viewport.scrollWidth - viewport.clientWidth; const direction = next.dataset.carouselNext ? -1 : 1;
+  viewport.scrollTo({ left: direction > 0 ? (viewport.scrollLeft >= end - 4 ? 0 : Math.min(viewport.scrollLeft + distance, end)) : (viewport.scrollLeft <= 4 ? end : Math.max(viewport.scrollLeft - distance, 0)), behavior:'smooth' });
+  clearInterval(homeCarouselTimers.get(next.dataset.carouselNext || next.dataset.carouselPrev));
+  const key = next.dataset.carouselNext || next.dataset.carouselPrev; homeCarouselTimers.set(key, setInterval(() => { const forward = carousel.querySelector('[data-carousel-next]'); forward?.click(); }, 4200));
+});
 document.addEventListener('click', event => { const trigger = event.target.closest('[data-open-admin]'); if (trigger) openAdminForm(trigger.dataset.openAdmin); });
 showRoute();
 renderFeaturedSelections();
