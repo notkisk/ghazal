@@ -21,3 +21,32 @@ Create a point-in-time SQLite backup with `npm run backup`. Set `GHAZAL_BACKUP_D
 ### Production deployment
 
 Run the Node process behind a reverse proxy such as Caddy or nginx, terminate TLS at the proxy, and set `FORCE_HTTPS=true` so forwarded HTTP requests redirect to HTTPS. Set `GHAZAL_DATA_DIR` to a persistent disk, configure `GHAZAL_ADMIN_PASSWORD`, and schedule `npm run backup` at least daily. Keep `.data/` out of the public web root and restrict access to `/admin.html` at the proxy if the deployment has an additional access-control layer. The storefront uses `https://alghazal.books/` as its canonical and sitemap origin; change those values in `index.html`, `robots.txt`, and `sitemap.xml` if the real domain differs.
+
+### Railway
+
+The repository ships a `railway.json` (Nixpacks build, `npm start`, health check at `/api/health`) and a `.nvmrc` pinned to Node 22. Deploying needs a Railway account, a **persistent volume** for SQLite, and the owner credentials as service variables.
+
+1. Install the CLI and sign in: `npm i -g @railway/cli && railway login`.
+2. From the project root: `railway init` (or `railway link` for an existing project), then `railway up`.
+3. Add a volume mounted at `/data` (dashboard → service → **Variables/Volumes**, or `railway volume add --mount-path /data`).
+4. Set the service variables:
+
+   ```sh
+   railway variables \
+     --set "GHAZAL_DATA_DIR=/data" \
+     --set "GHAZAL_ADMIN_EMAIL=owner@example.com" \
+     --set "GHAZAL_ADMIN_PASSWORD=<12+ characters>" \
+     --set "FORCE_HTTPS=true"
+   ```
+
+   Add `META_PIXEL_ID`, `META_ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID` only if those integrations are used. Railway injects `PORT` automatically; the server already reads it.
+5. Generate a public domain with `railway domain`, then open `/admin.html` and sign in with the owner account.
+
+Notes:
+
+- Keep the service at **one replica**: `node:sqlite` is a single-file database and the volume cannot be shared by concurrent writers.
+- A volume mounted at `/data` is the only persistent storage. Redeploys keep the database; deleting the volume deletes orders, catalog edits, and staff accounts.
+- Back up the volume regularly (`npm run backup` inside the service, or snapshot the volume from Railway) before restoring it elsewhere.
+- `FORCE_HTTPS=true` is safe on Railway because TLS terminates at the edge and `x-forwarded-proto` is `https`.
+- Set `GHAZAL_ADMIN_PASSWORD` before the first boot so the owner account exists and public first-run signup stays closed. Changing the variable later does not rotate the password; use `npm run admin:reset -- <email> '<password>'` from a Railway shell instead.
+
