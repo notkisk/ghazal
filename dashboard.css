@@ -35,3 +35,8 @@ body[data-role="admin"] [data-owner-finance],body[data-role="admin"] .dashboard-
 .permission-editor{grid-column:1/-1;display:grid;gap:8px;padding-top:10px;border-top:1px solid #dfd1bb}.permission-editor>label{display:flex;align-items:center;gap:7px;font-size:10px}.permission-editor select{border:1px solid #d5c4aa;background:#fbf8f1;padding:5px;font:10px var(--sans)}.permission-grid{display:flex;flex-wrap:wrap;gap:5px 12px}.permission-grid label{display:flex;align-items:center;gap:4px;font-size:9px;color:var(--muted)}.permission-grid input{accent-color:var(--brown)}
 @media(max-width:1050px){.owner-app>.stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:700px){.owner-app.app-page{padding-block:16px 32px}.owner-app .owner-header{align-items:flex-start}.owner-app .owner-header h1{font-size:29px}.owner-app .owner-header .owner-actions{margin-top:0}.owner-app>.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stats-toolbar strong{flex-basis:100%}}
+.publisher-feature-admin-list{display:grid;gap:10px}
+.publisher-feature-admin{display:flex;align-items:center;gap:14px;padding:15px 16px;background:#fbf8f1;border:1px solid #d9cbb7;border-right:4px solid var(--publisher-accent)}
+.publisher-feature-admin-mark{width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--publisher-accent);color:var(--publisher-accent);font:700 25px var(--serif);flex:none}
+.publisher-feature-admin>div{display:grid;gap:4px;flex:1}.publisher-feature-admin strong{font:400 20px var(--serif)}.publisher-feature-admin small{font-size:10px;color:var(--muted)}
+.toggle-control{display:flex;align-items:center;gap:8px;font-size:10px;white-space:nowrap}.toggle-control input{accent-color:var(--brown);width:17px;height:17px}
