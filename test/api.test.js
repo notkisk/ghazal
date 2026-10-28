@@ -14,7 +14,7 @@ test.after(() => fs.rmSync(dataDir, { recursive:true, force:true }));
 test('catalog is seeded and orders reserve stock transactionally', () => {
   assert.equal(db.prepare('SELECT COUNT(*) n FROM books').get().n, 12);
   assert.deepEqual(catalogPayload().bookGenres, ['أدب · رسائل','أدب الأطفال','الأدب العالمي','الأدب العربي','الاقتصاد','التاريخ','التربية','التنمية الذاتية','الدين والفكر الإسلامي','الرحلات','الرواية','السياسة','السيرة الذاتية','الشعر','العلوم','الفلسفة','الفنون','القصص القصيرة','المسرح','رواية · تاريخ','رواية · فلسفة','رواية مترجمة','سيرة · تاريخ','علم · إنسانيات','علم الاجتماع','علم النفس','فكر · إنسانيات','فكر · علم نفس','فكر · نقد ثقافي','فلسفة · كلاسيكيات']);
-  const reference = createOrder({ customer:{customer:'اختبار الغزال',phone:'0555555555'}, items:[{id:'stranger',qty:2}], shipping:{type:'home',wilayaCode:16,wilaya:'Alger',commune:'Alger Centre',address:'شارع الاختبار 1',price:600} });
+  const reference = createOrder({ customer:{customer:'اختبار الغزال',phone:'0555555555'}, items:[{id:'stranger',qty:2}], shipping:{type:'home',wilayaCode:16,wilaya:'Alger',commune:'Alger Centre',price:600} });
   assert.match(reference, /^GZ-/);
   const book = db.prepare('SELECT stock,reserved,stock-reserved available FROM books WHERE id=?').get('stranger');
   assert.equal(book.available, 8);
@@ -22,23 +22,25 @@ test('catalog is seeded and orders reserve stock transactionally', () => {
 });
 
 test('insufficient stock is rejected without a partial reservation', () => {
-  assert.throws(() => createOrder({ customer:{customer:'اختبار الغزال',phone:'0555555555'}, items:[{id:'stranger',qty:99}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',address:'شارع الاختبار 1',price:600} }), /insufficient_stock/);
+  assert.throws(() => createOrder({ customer:{customer:'اختبار الغزال',phone:'0555555555'}, items:[{id:'stranger',qty:99}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} }), /insufficient_stock/);
   assert.equal(db.prepare('SELECT reserved FROM books WHERE id=?').get('stranger').reserved, 2);
 });
 
 test('checkout rejects a commune that is not in the selected wilaya', () => {
-  assert.throws(() => createOrder({ customer:{customer:'اختبار العنوان',phone:'0555555555'}, items:[{id:'stranger',qty:1}], shipping:{type:'home',wilayaCode:16,commune:'Commune inexistante',address:'شارع الاختبار 3',price:600} }), /invalid_commune/);
+  assert.throws(() => createOrder({ customer:{customer:'اختبار العنوان',phone:'0555555555'}, items:[{id:'stranger',qty:1}], shipping:{type:'home',wilayaCode:16,commune:'Commune inexistante',price:600} }), /invalid_commune/);
 });
 
 test('checkout accepts the canonical commune id from the selector', () => {
   const commune = require('../data/algeria-communes-58-wilayas.json').find(item => item.wilaya_code === '16');
-  const reference = createOrder({ customer:{customer:'اختبار المعرّف',phone:'0555555555'}, items:[{id:'brief-time',qty:1}], shipping:{type:'home',wilayaCode:16,communeId:commune.id,commune:commune.commune_name_ascii,address:'شارع الاختبار 4',price:600} });
+  const reference = createOrder({ customer:{customer:'اختبار المعرّف',phone:'0555555555'}, items:[{id:'brief-time',qty:1}], shipping:{type:'home',wilayaCode:16,communeId:commune.id,commune:commune.commune_name_ascii,price:600} });
   assert.match(reference, /^GZ-/);
 });
 
-test('checkout accepts an order without a delivery address', () => {
+test('checkout accepts an order without a delivery address and derives one for Ecotrack', () => {
   const reference = createOrder({ customer:{customer:'اختبار العنوان الاختياري',phone:'0555555555'}, items:[{id:'plague',qty:1}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} });
   assert.match(reference, /^GZ-/);
+  const view = orderView(db.prepare('SELECT * FROM orders WHERE reference=?').get(reference));
+  assert.match(view.ecotrackRow['adresse de livraison*'], /Alger Centre/);
 });
 
 test('checkout ignores client shipping prices and applies database discounts', () => {
@@ -84,7 +86,7 @@ test('password hashes are salted and do not contain the plaintext', () => {
 });
 
 test('confirmation settles reservations and returns restore physical stock once', () => {
-  const reference = createOrder({ customer:{customer:'اختبار المخزون',phone:'0666666666'}, items:[{id:'meaning',qty:3},{id:'meaning',qty:2}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',address:'شارع الاختبار 2',price:600} });
+  const reference = createOrder({ customer:{customer:'اختبار المخزون',phone:'0666666666'}, items:[{id:'meaning',qty:3},{id:'meaning',qty:2}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} });
   assert.equal(db.prepare('SELECT stock FROM books WHERE id=?').get('meaning').stock, 10);
   assert.equal(db.prepare('SELECT reserved FROM books WHERE id=?').get('meaning').reserved, 5);
   transitionOrder(reference, 'confirmed', 'تم التأكيد', { id: 1 });
@@ -99,7 +101,7 @@ test('confirmation settles reservations and returns restore physical stock once'
 });
 
 test('cancelling an unconfirmed order releases reservation without reducing stock', () => {
-  const reference = createOrder({ customer:{customer:'اختبار الإلغاء',phone:'0777777777'}, items:[{id:'letters',qty:2}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',address:'مكتب الاختبار',price:300} });
+  const reference = createOrder({ customer:{customer:'اختبار الإلغاء',phone:'0777777777'}, items:[{id:'letters',qty:2}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',price:300} });
   transitionOrder(reference, 'cancelled', 'لا حاجة', { id: 1 });
   assert.equal(db.prepare('SELECT stock FROM books WHERE id=?').get('letters').stock, 10);
   assert.equal(db.prepare('SELECT reserved FROM books WHERE id=?').get('letters').reserved, 0);

@@ -287,7 +287,7 @@ document.body.insertAdjacentHTML('beforeend', `
     <div class="demo-notice"><span>✳</span> معاينة تجريبية: تُحفظ الطلبات على هذا الجهاز فقط، ولا تُرسل إلى متجر.</div>
     <div class="checkout-steps"><span data-step-label="1">١ · بيانات التوصيل</span><span data-step-label="2">٢ · مراجعة الطلب</span><span data-step-label="3">٣ · التأكيد</span></div>
     <div class="checkout-body">
-      <section class="checkout-step" data-step="1"><form id="checkout-form"><div class="field-pair"><label>الاسم واللقب <input name="customer" autocomplete="name" required minlength="3" placeholder="الاسم كما يظهر على الطرد" /></label><label>رقم الهاتف ١ <input name="phone" type="tel" autocomplete="tel" required minlength="10" maxlength="10" placeholder="05xxxxxxxx" /></label></div><div class="field-pair"><label>رقم الهاتف ٢ <input name="phone2" type="tel" autocomplete="tel" minlength="10" maxlength="10" placeholder="اختياري" /></label><label>الولاية <select name="wilayaCode" required>${wilayas.map(wilaya => `<option value="${wilaya.code}" ${wilaya.code === 16 ? 'selected' : ''}>${String(wilaya.code).padStart(2, '0')} — ${wilaya.name}</option>`).join('')}</select></label></div><label>البلدية <select name="commune" id="commune-select" autocomplete="address-level3" required disabled><option value="">جار تحميل البلديات…</option></select></label><label>عنوان التوصيل <textarea name="address" rows="2" placeholder="اختياري — الحي، الشارع، رقم المنزل وأقرب معلم"></textarea></label><label>رابط الموقع على الخريطة <input name="mapLink" type="url" placeholder="اختياري — https://maps.google.com/..." /></label><label>ملاحظات للناقل <textarea name="notes" rows="2" placeholder="اختياري"></textarea></label><fieldset class="delivery-field"><legend>نوع الشحن</legend><label><input type="radio" name="shipmentType" value="home" checked /><span><strong>إيصال للمنزل</strong><small id="home-shipping-price"></small></span></label><label><input type="radio" name="shipmentType" value="office" /><span><strong>استلام من المكتب (Stop Desk)</strong><small id="office-shipping-price"></small></span></label></fieldset><div class="payment-note"><span>◉</span><div><strong>الدفع نقدًا عند الاستلام</strong><small>سيُرسل المبلغ الإجمالي كقيمة التحصيل في ملف Ecotrack.</small></div></div><button class="button button-dark checkout-primary" type="submit">مراجعة الطلب <span>↖</span></button></form></section>
+      <section class="checkout-step" data-step="1"><form id="checkout-form"><div class="field-pair"><label>الاسم واللقب <input name="customer" autocomplete="name" required minlength="3" placeholder="الاسم كما يظهر على الطرد" /></label><label>رقم الهاتف <input name="phone" type="tel" autocomplete="tel" required minlength="10" maxlength="10" placeholder="05xxxxxxxx" /></label></div><div class="field-pair"><label>الولاية <select name="wilayaCode" required>${wilayas.map(wilaya => `<option value="${wilaya.code}" ${wilaya.code === 16 ? 'selected' : ''}>${String(wilaya.code).padStart(2, '0')} — ${wilaya.name}</option>`).join('')}</select></label><label>البلدية <select name="commune" id="commune-select" autocomplete="address-level3" required disabled><option value="">جار تحميل البلديات…</option></select></label></div><fieldset class="delivery-field"><legend>نوع الشحن</legend><label><input type="radio" name="shipmentType" value="home" checked /><span><strong>إيصال للمنزل</strong><small id="home-shipping-price"></small></span></label><label><input type="radio" name="shipmentType" value="office" /><span><strong>استلام من المكتب (Stop Desk)</strong><small id="office-shipping-price"></small></span></label></fieldset><div class="payment-note"><span>◉</span><div><strong>الدفع نقدًا عند الاستلام</strong><small>سيُرسل المبلغ الإجمالي كقيمة التحصيل في ملف Ecotrack.</small></div></div><button class="button button-dark checkout-primary" type="submit">مراجعة الطلب <span>↖</span></button></form></section>
       <section class="checkout-step" data-step="2" hidden><div id="checkout-review"></div><div class="checkout-actions"><button id="checkout-back" class="button button-outline" type="button">تعديل البيانات <span>→</span></button><button id="checkout-confirm" class="button button-dark" type="button">تأكيد الطلب <span>↖</span></button></div></section>
       <section class="checkout-step" data-step="3" hidden><div class="confirmation"><span class="confirmation-star">✳</span><h3>وصل طلبك إلى دفتر الغزال.</h3><p>احتفظ برقم الطلب لمتابعة حالته من أي جهاز.</p><div id="order-receipt"></div><label class="order-lookup">متابعة طلب سابق<input id="order-lookup-reference" placeholder="GZ-..." autocomplete="off" /><button id="order-lookup-button" class="button button-outline" type="button">بحث عن الطلب</button></label><p id="order-lookup-result" class="owner-note" aria-live="polite"></p><button id="checkout-done" class="button button-dark" type="button">العودة إلى الكتب <span>↖</span></button></div></section>
     </div>
@@ -413,12 +413,8 @@ $('#checkout-form').addEventListener('submit', async event => {
   const data = Object.fromEntries(new FormData(form));
   const normalizePhone = value => String(value || '').replace(/[^\d]/g, '');
   data.phone = normalizePhone(data.phone);
-  data.phone2 = normalizePhone(data.phone2);
-  form.elements.address.setCustomValidity('');
   if (!/^0[5-7]\d{8}$/.test(data.phone)) { form.elements.phone.setCustomValidity('أدخل رقمًا جزائريًا صحيحًا من 10 أرقام يبدأ بـ 05 أو 06 أو 07.'); form.elements.phone.reportValidity(); return; }
   form.elements.phone.setCustomValidity('');
-  if (data.phone2 && !/^0[5-7]\d{8}$/.test(data.phone2)) { form.elements.phone2.setCustomValidity('أدخل رقمًا جزائريًا من 10 أرقام أو اترك الحقل فارغًا.'); form.elements.phone2.reportValidity(); return; }
-  form.elements.phone2.setCustomValidity('');
   const wilaya = selectedWilaya(data.wilayaCode);
   const commune = communes.find(item => item.wilaya_code === String(wilaya.code).padStart(2, '0') && String(item.id) === String(data.commune)) || communes.find(item => item.wilaya_code === String(wilaya.code).padStart(2, '0') && (item.commune_name_ascii.toLocaleLowerCase() === data.commune.trim().toLocaleLowerCase() || item.commune_name === data.commune.trim()));
   if (!commune) { form.elements.commune.setCustomValidity('اختر بلدية صحيحة من الولاية المحددة.'); form.elements.commune.reportValidity(); return; }
@@ -428,7 +424,7 @@ $('#checkout-form').addEventListener('submit', async event => {
   const lines = cart.map(({ id, qty }) => `<div class="review-line"><span>${byId[id].title} <small>× ${qty}</small></span><strong>${money(discountedPrice(byId[id]) * qty)}</strong></div>`).join('');
   const discountLine = discountTotal() > 0 ? `<div class="review-line discount-line"><span>الخصم${activeDiscountCode ? ` (${activeDiscountCode})` : ''}</span><strong>− ${money(discountTotal())}</strong></div>` : '';
   $('#checkout-review').innerHTML = `<div class="review-block"><h3>كتبك المختارة</h3>${lines}${discountLine}<div class="review-line"><span>توصيل ${checkoutData.shipmentType === 'office' ? 'إلى المكتب' : 'إلى المنزل'}</span><strong>${money(shippingCost)}</strong></div><div class="review-line review-total"><span>الإجمالي عند الاستلام</span><strong>${money(subtotal() + shippingCost)}</strong></div></div><div class="review-block"><h3>التوصيل والدفع</h3><p id="review-address"></p><p>الولاية رقم ${wilaya.code} · ${checkoutData.shipmentType === 'office' ? 'استلام من المكتب (Stop Desk)' : 'إيصال إلى المنزل'}</p><p>الدفع نقدًا عند الاستلام</p></div>`;
-  $('#review-address').textContent = `${data.customer} · ${data.phone} · ${data.address}، ${checkoutData.city}، ${wilaya.name}`;
+  $('#review-address').textContent = `${data.customer} · ${data.phone} · ${checkoutData.communeArabic}، ${wilaya.name}`;
   checkoutStep = 2;
   renderCheckoutStep();
   $('.checkout-panel').scrollTo({ top: 0, behavior: 'smooth' });
@@ -439,7 +435,7 @@ function checkoutErrorMessage(error) {
   const code = String(error?.message || '');
   if (code.includes('insufficient_stock')) return 'يبدو أن أحد الكتب لم يعد متوفرًا بالكمية المطلوبة. عدّل السلة وحاول مرة أخرى.';
   if (code.includes('invalid_commune')) return 'تعذر مطابقة البلدية مع الولاية المختارة. اختر البلدية من القائمة نفسها ثم حاول مرة أخرى.';
-  if (code.includes('invalid_shipping')) return 'اكتب عنوان توصيل واضحًا من 8 أحرف على الأقل.';
+  if (code.includes('invalid_shipping')) return 'تعذر تحديد الولاية أو نوع الشحن. أعد اختيارهما ثم حاول مرة أخرى.';
   if (code.includes('invalid_phone')) return 'تحقق من رقم الهاتف وأعد المحاولة.';
   if (code.includes('request_timeout') || code.includes('request_failed')) return 'تعذر الاتصال بالمكتبة الآن. تحقق من اتصالك وحاول بعد لحظات.';
   return 'تعذر حفظ الطلب الآن. لم يتم تأكيده، حاول مرة أخرى.';
@@ -448,13 +444,14 @@ $('#checkout-confirm').addEventListener('click', async () => {
   if (!checkoutData || !cart.length) return;
   let reference = `GZ-${Date.now().toString(36).toUpperCase().slice(-6)}`;
   const metaEventId = window.crypto?.randomUUID?.() || `gz-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const deliveryAddress = `${checkoutData.communeArabic}، ${checkoutData.wilaya}`;
   let serverResult = null;
   try {
     serverResult = await window.GhazalAPI?.createOrder({
-      customer: { customer: checkoutData.customer, phone: checkoutData.phone, phone2: checkoutData.phone2 || '' },
+      customer: { customer: checkoutData.customer, phone: checkoutData.phone },
       items: cart.map(item => ({ id: item.id, qty: item.qty })),
-      shipping: { type: checkoutData.shipmentType, wilayaCode: Number(checkoutData.wilayaCode), wilaya: checkoutData.wilaya, communeId: Number(checkoutData.communeId), commune: checkoutData.city, address: checkoutData.address, price: checkoutData.shippingCost },
-      discountCode: checkoutData.discountCode || '', notes: checkoutData.notes || '', metaEventId
+      shipping: { type: checkoutData.shipmentType, wilayaCode: Number(checkoutData.wilayaCode), wilaya: checkoutData.wilaya, communeId: Number(checkoutData.communeId), commune: checkoutData.city, price: checkoutData.shippingCost },
+      discountCode: checkoutData.discountCode || '', metaEventId
     });
     if (serverResult?.reference) reference = serverResult.reference;
   } catch (error) {
@@ -468,21 +465,21 @@ $('#checkout-confirm').addEventListener('click', async () => {
     'reference commande': reference,
     'nom et prenom du destinataire*': checkoutData.customer,
     'telephone*': checkoutData.phone,
-    'telephone 2': checkoutData.phone2 || '',
+    'telephone 2': '',
     'code wilaya*': checkoutData.wilayaCode,
     'wilaya de livraison': checkoutData.wilaya,
     'commune de livraison*': checkoutData.city,
-    'adresse de livraison*': checkoutData.address,
+    'adresse de livraison*': deliveryAddress,
     'produit*': cart.map(({ id, qty }) => `${byId[id].title} x${qty}`).join(' + '),
     'poids (kg)': 0,
     'montant du colis*': serverTotal,
-    'remarque': checkoutData.notes || '',
+    'remarque': '',
     'FRAGILE\n( si oui mettez OUI sinon laissez vide )': '',
     'ECHANGE\n( si oui mettez OUI sinon laissez vide )': '',
     'PICK UP\n( si oui mettez OUI sinon laissez vide )': '',
     'RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )': 'OUI',
     'STOP DESK\n( si oui mettez OUI sinon laissez vide )': checkoutData.shipmentType === 'office' ? 'OUI' : '',
-    'Lien map': checkoutData.mapLink || ''
+    'Lien map': ''
   };
   const order = {
     reference,

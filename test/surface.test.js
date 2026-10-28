@@ -9,9 +9,15 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 test('storefront keeps mobile checkout and responsive shelf behavior', () => {
   const html = read('script.js');
   const css = read('enhancements.css') + read('styles.css');
+  assert.match(html, /name="customer"/);
   assert.match(html, /name="phone"/);
   assert.match(html, /name="wilayaCode"/);
+  assert.match(html, /name="commune"/);
   assert.match(html, /name="shipmentType"/);
+  assert.doesNotMatch(html, /name="phone2"/);
+  assert.doesNotMatch(html, /name="address"/);
+  assert.doesNotMatch(html, /name="mapLink"/);
+  assert.doesNotMatch(html, /name="notes"/);
   assert.match(html, /catalog-publisher-filter/);
   assert.match(html, /catalog-genre-filter/);
   assert.match(html, /catalog-price-min/);
