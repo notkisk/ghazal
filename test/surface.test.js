@@ -22,8 +22,10 @@ test('storefront keeps mobile checkout and responsive shelf behavior', () => {
   assert.match(html, /catalog-genre-filter/);
   assert.match(html, /catalog-price-min/);
   assert.match(html, /catalog-clear-filters/);
-  assert.match(html, /home-carousel/);
-  assert.match(html, /home-editorial-grid/);
+  assert.match(html, /shelf-carousel/);
+  assert.match(html, /shelf-card-add/);
+  assert.doesNotMatch(html, /home-editorial-grid/);
+  assert.doesNotMatch(html, /load-more/);
   assert.doesNotMatch(html, /home-new-grid/);
   assert.match(css, /@media\(max-width:600px\)/);
   assert.match(read('index.html'), /home-book-shelves|newsletter-form/);
