@@ -7,7 +7,7 @@ const path = require('node:path');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghazal-api-'));
 process.env.GHAZAL_DATA_DIR = dataDir;
 process.env.GHAZAL_ADMIN_PASSWORD = 'secret';
-const { db, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload } = require('../server');
+const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload } = require('../server');
 
 test.after(() => fs.rmSync(dataDir, { recursive:true, force:true }));
 
@@ -125,4 +125,23 @@ test('Meta Purchase conversion is sent once and duplicate event ids are suppress
   global.fetch = originalFetch;
   delete process.env.META_PIXEL_ID;
   delete process.env.META_ACCESS_TOKEN;
+});
+
+test('catalog sync stores the optional page count without requiring it', async () => {
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const login = await fetch(`${base}/api/auth/login`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ email:'owner@alghazal.local', password:'secret' }) });
+    const { token } = await login.json();
+    const withPages = { id:'pages-test', title:'كتاب الصفحات', author:'كاتب', publisher:'ناشر', price:1500, stock:2, pages:312, image:'meaning.jpg' };
+    const withoutPages = { id:'no-pages-test', title:'كتاب بلا صفحات', author:'كاتب', publisher:'ناشر', price:900, stock:1, image:'meaning.jpg' };
+    const response = await fetch(`${base}/api/admin/catalog`, { method:'PUT', headers:{'content-type':'application/json', authorization:`Bearer ${token}`}, body:JSON.stringify({ books:[withPages, withoutPages] }) });
+    assert.equal(response.status, 200);
+    const saved = catalogPayload().books;
+    assert.equal(saved.find(book => book.id === 'pages-test').pages, 312);
+    assert.equal(saved.find(book => book.id === 'no-pages-test').pages, null);
+  } finally {
+    db.prepare('DELETE FROM books WHERE id IN (?,?)').run('pages-test', 'no-pages-test');
+    await new Promise(resolve => server.close(resolve));
+  }
 });
