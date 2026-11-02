@@ -1,13 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const zlib = require('node:zlib');
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghazal-api-'));
 process.env.GHAZAL_DATA_DIR = dataDir;
 process.env.GHAZAL_ADMIN_PASSWORD = 'secret';
-const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload } = require('../server');
+const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, COVERS_DIR } = require('../server');
+
+const PNG_BYTES = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const PNG_DATA_URL = `data:image/png;base64,${PNG_BYTES.toString('base64')}`;
+async function listen() { await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); return `http://127.0.0.1:${server.address().port}`; }
+async function closeServer() { await new Promise(resolve => server.close(resolve)); }
+async function ownerToken(base) {
+  const response = await fetch(`${base}/api/auth/login`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ email:'owner@alghazal.local', password:'secret' }) });
+  return (await response.json()).token;
+}
 
 test.after(() => fs.rmSync(dataDir, { recursive:true, force:true }));
 
@@ -144,4 +155,111 @@ test('catalog sync stores the optional page count without requiring it', async (
     db.prepare('DELETE FROM books WHERE id IN (?,?)').run('pages-test', 'no-pages-test');
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('cover upload stores a deduplicated file and serves it immutably', async () => {
+  const base = await listen();
+  try {
+    const authorization = `Bearer ${await ownerToken(base)}`;
+    const upload = await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ dataUrl: PNG_DATA_URL }) });
+    assert.equal(upload.status, 201);
+    const stored = await upload.json();
+    assert.match(stored.image, /^\/covers\/[a-f0-9]{64}\.png$/);
+    const filePath = path.join(COVERS_DIR, path.basename(stored.image));
+    assert.ok(fs.existsSync(filePath));
+    assert.deepEqual(fs.readFileSync(filePath), PNG_BYTES);
+    const duplicate = await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ dataUrl: PNG_DATA_URL }) });
+    assert.equal((await duplicate.json()).image, stored.image);
+    const served = await fetch(`${base}${stored.image}`);
+    assert.equal(served.status, 200);
+    assert.equal(served.headers.get('content-type'), 'image/png');
+    assert.match(served.headers.get('cache-control'), /immutable/);
+    assert.deepEqual(Buffer.from(await served.arrayBuffer()), PNG_BYTES);
+    const missing = await fetch(`${base}/covers/${'0'.repeat(64)}.png`);
+    assert.equal(missing.status, 404);
+    const invalid = await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ dataUrl: 'data:image/png;base64,bm90LWFuLWltYWdl' }) });
+    assert.equal(invalid.status, 422);
+    const derived = await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ source: stored.image, thumb: PNG_DATA_URL, display: PNG_DATA_URL }) });
+    assert.equal(derived.status, 201);
+    const variants = await derived.json();
+    assert.equal(variants.image, stored.image);
+    assert.match(variants.thumb, /^\/covers\/[a-f0-9]{64}\.png$/);
+    const unsafe = await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ source: '/covers/../../server.js', thumb: PNG_DATA_URL }) });
+    assert.equal(unsafe.status, 400);
+  } finally { await closeServer(); }
+});
+
+test('cover endpoint downloads remote images on the server', async () => {
+  const remote = http.createServer((req, res) => { res.writeHead(200, { 'content-type':'image/png', 'content-length':PNG_BYTES.length }); res.end(PNG_BYTES); });
+  await new Promise(resolve => remote.listen(0, '127.0.0.1', resolve));
+  const remoteUrl = `http://127.0.0.1:${remote.address().port}/cover.png`;
+  const base = await listen();
+  try {
+    const authorization = `Bearer ${await ownerToken(base)}`;
+    const response = await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ url: remoteUrl }) });
+    assert.equal(response.status, 201);
+    const stored = await response.json();
+    assert.match(stored.image, /^\/covers\/[a-f0-9]{64}\.png$/);
+    assert.ok(fs.existsSync(path.join(COVERS_DIR, path.basename(stored.image))));
+  } finally {
+    await closeServer();
+    await new Promise(resolve => remote.close(resolve));
+  }
+});
+
+test('embedded data-url covers migrate to files exactly once', () => {
+  const id = 'cover-migration-test';
+  const stamp = new Date().toISOString();
+  db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,image,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(id, 'كتاب الترحيل', 'كاتب', 'ناشر', 'literature', 'رواية', 1000, 1, PNG_DATA_URL, stamp, stamp);
+  assert.ok(migrateEmbeddedCovers() >= 1);
+  const row = db.prepare('SELECT image,thumb,display FROM books WHERE id=?').get(id);
+  assert.match(row.image, /^\/covers\/[a-f0-9]{64}\.png$/);
+  assert.equal(row.thumb, null);
+  assert.equal(row.display, null);
+  assert.ok(fs.existsSync(path.join(COVERS_DIR, path.basename(row.image))));
+  assert.equal(migrateEmbeddedCovers(), 0);
+  db.prepare('DELETE FROM books WHERE id=?').run(id);
+});
+
+test('catalog sync stores cover paths without embedded image data', async () => {
+  const base = await listen();
+  const id = 'cover-path-test';
+  try {
+    const authorization = `Bearer ${await ownerToken(base)}`;
+    const stored = await (await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ dataUrl: PNG_DATA_URL }) })).json();
+    const book = { id, title:'كتاب الأغلفة', author:'كاتب', publisher:'ناشر', price:1200, stock:3, image:stored.image, thumb:stored.image, display:stored.image };
+    const sync = await fetch(`${base}/api/admin/catalog`, { method:'PUT', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ books:[book] }) });
+    assert.equal(sync.status, 200);
+    const payloadText = await (await fetch(`${base}/api/catalog`)).text();
+    assert.ok(!payloadText.includes('data:image'));
+    const saved = catalogPayload().books.find(item => item.id === id);
+    assert.equal(saved.image, stored.image);
+    assert.equal(saved.thumb, stored.image);
+    assert.equal(saved.display, stored.image);
+    const withoutVariants = { ...book, thumb: undefined, display: undefined };
+    await fetch(`${base}/api/admin/catalog`, { method:'PUT', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ books:[withoutVariants] }) });
+    const kept = catalogPayload().books.find(item => item.id === id);
+    assert.equal(kept.thumb, stored.image);
+    assert.equal(kept.display, stored.image);
+  } finally {
+    db.prepare('DELETE FROM books WHERE id=?').run(id);
+    await closeServer();
+  }
+});
+
+test('catalog responses are gzipped for clients that accept it', async () => {
+  const base = await listen();
+  try {
+    const compressed = await new Promise((resolve, reject) => {
+      const request = http.get(`${base}/api/catalog`, { headers:{ 'accept-encoding':'gzip' } }, response => {
+        assert.equal(response.headers['content-encoding'], 'gzip');
+        const chunks = [];
+        response.on('data', chunk => chunks.push(chunk));
+        response.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+      request.on('error', reject);
+    });
+    const payload = JSON.parse(zlib.gunzipSync(compressed).toString('utf8'));
+    assert.ok(payload.books.length >= 12);
+  } finally { await closeServer(); }
 });

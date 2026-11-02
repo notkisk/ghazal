@@ -2,8 +2,9 @@
    preview remains available as a fallback for designers working offline. */
 window.GhazalAPI = (() => {
   const request = async (path, options = {}) => {
-    const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 8000);
-    let response; try { response = await fetch(path, { headers: { 'content-type': 'application/json', ...(options.headers || {}) }, signal:controller.signal, ...options }); } catch (error) { throw new Error(error.name === 'AbortError' ? `request_timeout:${path}` : `request_failed:${path}`); } finally { clearTimeout(timeout); }
+    const { timeout: timeoutMs = 8000, ...init } = options;
+    const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    let response; try { response = await fetch(path, { headers: { 'content-type': 'application/json', ...(init.headers || {}) }, signal:controller.signal, ...init }); } catch (error) { throw new Error(error.name === 'AbortError' ? `request_timeout:${path}` : `request_failed:${path}`); } finally { clearTimeout(timeout); }
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `request_failed_${response.status}`);
     return body;
@@ -26,6 +27,7 @@ window.GhazalAPI = (() => {
     adminCatalog: (token) => request('/api/admin/catalog', { headers: { authorization: `Bearer ${token}` } }),
     saveCatalog: (token, catalog) => request('/api/admin/catalog', { method:'PUT', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(catalog) }),
     cacheImageUrl: (token, url) => request('/api/admin/cache-image', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ url }) }),
+    saveCover: (token, cover) => request('/api/admin/covers', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(cover), timeout:30000 }),
     adminCollections: (token) => request('/api/admin/collections', { headers: { authorization: `Bearer ${token}` } }),
     createCollection: (token, collection) => request('/api/admin/collections', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(collection) }),
     updateCollection: (token, id, changes) => request(`/api/admin/collections/${encodeURIComponent(id)}`, { method:'PATCH', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(changes) }),

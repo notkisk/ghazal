@@ -2,6 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 const { DatabaseSync } = require('node:sqlite');
 const communes = require(path.join(__dirname, 'data/algeria-communes-58-wilayas.json'));
 
@@ -13,7 +14,7 @@ db.exec(`
   PRAGMA foreign_keys = ON;
   CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','admin')), permissions_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS books (id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT NOT NULL, publisher TEXT NOT NULL, category TEXT NOT NULL, genre TEXT NOT NULL, price INTEGER NOT NULL CHECK(price >= 0), stock INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0), reserved INTEGER NOT NULL DEFAULT 0 CHECK(reserved >= 0), isbn TEXT, pages INTEGER, image TEXT, note TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS books (id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT NOT NULL, publisher TEXT NOT NULL, category TEXT NOT NULL, genre TEXT NOT NULL, price INTEGER NOT NULL CHECK(price >= 0), stock INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0), reserved INTEGER NOT NULL DEFAULT 0 CHECK(reserved >= 0), isbn TEXT, pages INTEGER, image TEXT, thumb TEXT, display TEXT, note TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS authors (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, bio TEXT NOT NULL DEFAULT '', photo TEXT, created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS publishers (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, city TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', logo TEXT, created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS discounts (id INTEGER PRIMARY KEY, code TEXT UNIQUE, type TEXT NOT NULL CHECK(type IN ('percent','fixed')), value REAL NOT NULL CHECK(value >= 0), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
@@ -41,6 +42,8 @@ const userColumns = db.prepare('PRAGMA table_info(users)').all().map(column => c
 if (!userColumns.includes('permissions_json')) db.exec("ALTER TABLE users ADD COLUMN permissions_json TEXT NOT NULL DEFAULT '{}'");
 const bookColumns = db.prepare('PRAGMA table_info(books)').all().map(column => column.name);
 if (!bookColumns.includes('pages')) db.exec('ALTER TABLE books ADD COLUMN pages INTEGER');
+if (!bookColumns.includes('thumb')) db.exec('ALTER TABLE books ADD COLUMN thumb TEXT');
+if (!bookColumns.includes('display')) db.exec('ALTER TABLE books ADD COLUMN display TEXT');
 
 const now = () => new Date().toISOString();
 const rateBuckets = new Map();
@@ -50,7 +53,7 @@ const parse = (value, fallback = {}) => { try { return JSON.parse(value); } catc
 const hash = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 const passwordHash = (value, salt = crypto.randomBytes(16).toString('hex')) => `${salt}:${crypto.scryptSync(String(value), salt, 32).toString('hex')}`;
 const passwordMatches = (value, stored) => { const [salt, expected] = String(stored).split(':'); if (!salt || !expected) return false; const actual = crypto.scryptSync(String(value), salt, 32).toString('hex'); return crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected)); };
-const send = (res, status, payload, headers = {}) => { const body = JSON.stringify(payload); res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers }); res.end(body); };
+const send = (res, status, payload, headers = {}) => { const raw = Buffer.from(JSON.stringify(payload)); const gzip = Boolean(res._ghazalGzip) && raw.length > 1024; const body = gzip ? zlib.gzipSync(raw) : raw; res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...(gzip ? { 'content-encoding': 'gzip', vary: 'accept-encoding' } : {}), ...headers }); res.end(body); };
 const MAX_JSON_BODY_SIZE = 25 * 1024 * 1024;
 const readBody = (req) => new Promise((resolve, reject) => { let body = ''; let tooLarge = false; req.on('data', chunk => { if (tooLarge) return; body += chunk; if (Buffer.byteLength(body) > MAX_JSON_BODY_SIZE) { tooLarge = true; reject(new Error('request_too_large')); req.resume(); } }); req.on('end', () => { if (tooLarge) return; try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error('invalid_json')); } }); req.on('error', reject); });
 const headerToken = (req) => (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -78,6 +81,54 @@ function rateLimit(req, key, limit, windowMs) {
 }
 function recordConversion(eventId, eventName, reference, provider, status, response) { try { db.prepare('INSERT INTO conversion_events (event_id,event_name,reference,provider,status,response_json,created_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET status=excluded.status,response_json=excluded.response_json,created_at=excluded.created_at').run(String(eventId),eventName,reference,provider,status,json(response),now()); } catch (error) { console.error(`conversion_log_${error.message}`); } }
 function logError(source, error, details = {}) { try { db.prepare('INSERT INTO error_log (source,message,details_json,created_at) VALUES (?,?,?,?)').run(source,String(error?.message || error),json(details),now()); } catch {} }
+
+// Covers live on disk as content-addressed files. The catalog and the JSON API
+// only ever carry short paths, so payload size no longer grows with the number
+// of books. Originals are kept untouched; the browser generates smaller
+// `thumb` and `display` derivatives at import time for fast delivery.
+const COVERS_DIR = process.env.GHAZAL_COVERS_DIR || path.join(DATA_DIR, 'covers');
+fs.mkdirSync(COVERS_DIR, { recursive: true });
+const MAX_COVER_BYTES = 8 * 1024 * 1024;
+const coverTypes = { jpg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif', avif:'image/avif' };
+function detectCoverType(bytes) {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpg';
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'png';
+  if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'gif';
+  if (bytes.length >= 12 && bytes.toString('latin1', 0, 4) === 'RIFF' && bytes.toString('latin1', 8, 12) === 'WEBP') return 'webp';
+  if (bytes.length >= 12 && bytes.toString('latin1', 4, 8) === 'ftyp' && ['avif','avis'].includes(bytes.toString('latin1', 8, 12))) return 'avif';
+  return '';
+}
+function storeCover(bytes) {
+  if (!bytes || !bytes.length) throw new Error('cover_empty');
+  if (bytes.length > MAX_COVER_BYTES) throw new Error('cover_too_large');
+  const ext = detectCoverType(bytes); if (!ext) throw new Error('cover_not_image');
+  const name = `${crypto.createHash('sha256').update(bytes).digest('hex')}.${ext}`;
+  const target = path.join(COVERS_DIR, name);
+  if (!fs.existsSync(target)) { const temp = `${target}.${crypto.randomBytes(4).toString('hex')}.tmp`; fs.writeFileSync(temp, bytes); fs.renameSync(temp, target); }
+  return `/covers/${name}`;
+}
+function decodeCoverData(value) {
+  const match = /^data:image\/[a-z0-9.+-]+;base64,([a-z0-9+/=\s]+)$/i.exec(String(value || ''));
+  if (!match) throw new Error('invalid_image_data');
+  return Buffer.from(match[1].replace(/\s+/g, ''), 'base64');
+}
+async function fetchCoverFile(address) {
+  const url = String(address || '').trim();
+  if (!/^https?:\/\//i.test(url)) throw new Error('invalid_image_url');
+  const response = await fetch(url, { redirect:'follow', signal:AbortSignal.timeout(12000), headers:{ 'user-agent':'Ghazal-Bookstore-Cover/1.0', accept:'image/*' } });
+  if (!response.ok) throw new Error('image_fetch_failed');
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > MAX_COVER_BYTES) throw new Error('cover_too_large');
+  return storeCover(Buffer.from(await response.arrayBuffer()));
+}
+function migrateEmbeddedCovers() {
+  const rows = db.prepare("SELECT id,image FROM books WHERE image LIKE 'data:image/%'").all();
+  if (!rows.length) return 0;
+  const update = db.prepare('UPDATE books SET image=?,thumb=NULL,display=NULL,updated_at=? WHERE id=?');
+  let migrated = 0;
+  for (const row of rows) { try { update.run(storeCover(decodeCoverData(row.image)), now(), row.id); migrated += 1; } catch (error) { console.warn(`cover_migration_failed ${row.id}: ${error.message}`); } }
+  return migrated;
+}
 
 const seedBooks = [
   ['stranger','الغريب','ألبير كامو','منشورات الجمل','literature','رواية مترجمة',1900,'stranger.jpg'], ['world-yesterday','عالم الأمس','شتيفان تسفايغ','دار المدى','history','سيرة · تاريخ',2600,'world-yesterday.jpg'], ['meaning','الإنسان يبحث عن معنى','فيكتور فرانكل','آكيول','thought','فكر · علم نفس',2200,'meaning.jpg'], ['orientalism','الاستشراق','إدوارد سعيد','دار الآداب','history','فكر · نقد ثقافي',3900,'orientalism.jpg'], ['meditations','التأملات','ماركوس أوريليوس','طبعة عربية','thought','فلسفة · كلاسيكيات',2100,'meditations.jpg'], ['solitude','مئة عام من العزلة','غابرييل غارسيّا ماركيز','دار التنوير','literature','رواية مترجمة',3200,'solitude.jpg'], ['letters','رسائل إلى شاعر شاب','راينر ماريا ريلكه','دار الكرمة','literature','أدب · رسائل',1500,'letters.jpg'], ['sophies-world','عالم صوفي','جوستاين غاردر','دار المنى','thought','رواية · فلسفة',3600,'sophies-world.jpg'], ['plague','الطاعون','ألبير كامو','دار التنوير','literature','رواية مترجمة',2400,'plague.jpg'], ['name-of-rose','اسم الوردة','أمبرتو إيكو','دار الكتاب الجديد','literature','رواية · تاريخ',3200,'name-of-rose.jpg'], ['art-of-loving','فن الحب','إريك فروم','طبعة عربية','thought','فكر · إنسانيات',1800,'art-of-loving.jpg'], ['brief-time','تاريخ موجز للزمان','ستيفن هوكينغ','دار التنوير','history','علم · إنسانيات',2900,'brief-time.jpg']
@@ -109,6 +160,9 @@ const publisherSlogans = { mada:'بيت الثقافة والإبداع', jamal:
 const publisherFeatureRow = db.prepare('SELECT value_json FROM store_content WHERE key=?').get('publisherFeatures');
 if (publisherFeatureRow) { const currentFeatures = parse(publisherFeatureRow.value_json, []); const updatedFeatures = currentFeatures.map(item => ({ ...item, active:item.id === 'mada' && item.layoutVersion !== 3 ? true : item.active, slogan:publisherSlogans[item.id] || item.slogan || '', layoutVersion:3 })); if (JSON.stringify(currentFeatures) !== JSON.stringify(updatedFeatures)) db.prepare('UPDATE store_content SET value_json=?,updated_at=? WHERE key=?').run(json(updatedFeatures),now(),'publisherFeatures'); }
 { const insert = db.prepare('INSERT OR IGNORE INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?)'); const stamp = now(); defaultPublishers.forEach(([,name,city,logo]) => insert.run(name,city,'إصدارات مختارة من هذا الناشر.',logo,stamp)); }
+
+const migratedCovers = migrateEmbeddedCovers();
+if (migratedCovers) console.log(`Ghazal: migrated ${migratedCovers} embedded cover(s) to ${COVERS_DIR}`);
 
 function bookList(url) { const q = String(url.searchParams.get('q') || '').trim(); const where = q ? `WHERE title LIKE @q OR author LIKE @q OR publisher LIKE @q OR genre LIKE @q OR isbn LIKE @q` : ''; return db.prepare(`SELECT *, stock-reserved AS available FROM books ${where} ORDER BY title`).all(q ? { q: `%${q}%` } : {}); }
 function collectionList(includeInactive = false) { const collections = db.prepare(`SELECT * FROM collections ${includeInactive ? '' : 'WHERE active=1'} ORDER BY created_at`).all(); return collections.map(collection => ({ ...collection, active: Boolean(collection.active), homepage: Boolean(collection.homepage), bookIds: db.prepare('SELECT book_id FROM collection_books WHERE collection_id=? ORDER BY position').all(collection.id).map(item => item.book_id) })); }
@@ -221,6 +275,7 @@ function orderView(order) { const customer = parse(order.customer_json); const i
 function publicOrderView(order) { const view = orderView(order); return { reference:view.reference, status:view.status, total:view.total, created_at:view.created_at, updated_at:view.updated_at, placedAt:view.placedAt, timeline:view.timeline.map(event => ({ status:event.status, created_at:event.created_at })) }; }
 
 async function api(req, res, url) {
+  res._ghazalGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] || '').toLowerCase());
   try {
     if (req.method === 'GET' && url.pathname === '/api/health') return send(res, 200, { ok:true, service:'ghazal', time:now(), checks:{ database:Boolean(db.prepare('SELECT 1').get()) } });
     const limited = req.method === 'POST' && url.pathname === '/api/auth/login' ? rateLimit(req, 'login', 10, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/auth/signup' ? rateLimit(req, 'signup', 3, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/orders' ? rateLimit(req, 'orders', 20, 60e3) : req.method === 'POST' && url.pathname === '/api/newsletter' ? rateLimit(req, 'newsletter', 5, 15 * 60e3) : 0;
@@ -251,13 +306,29 @@ async function api(req, res, url) {
     if (req.method === 'DELETE' && url.pathname.startsWith('/api/admin/users/')) { const owner = requirePermission(req,res,'manage_staff'); if (!owner) return; const id = Number(url.pathname.split('/').pop()); if (id === owner.id) return send(res,400,{error:'cannot_delete_self'}); const employee = db.prepare('SELECT id,email,role FROM users WHERE id=?').get(id); if (!employee) return send(res,404,{error:'employee_not_found'}); db.prepare('UPDATE audit_log SET user_id=NULL WHERE user_id=?').run(employee.id); db.prepare('DELETE FROM users WHERE id=?').run(employee.id); audit(owner,'delete','user',employee.id,{email:employee.email,role:employee.role}); return send(res,200,{ok:true}); }
     if (req.method === 'GET' && url.pathname === '/api/admin/orders') { const viewer = requirePermission(req,res,'view_orders'); if (!viewer) return; const orders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all().map(orderView); return send(res, 200, { orders }); }
     if (req.method === 'GET' && url.pathname === '/api/admin/catalog') { const viewer = requirePermission(req,res,'view_catalog'); if (!viewer) return; return send(res, 200, catalogPayload()); }
+    if (req.method === 'POST' && url.pathname === '/api/admin/covers') {
+      const editor = requirePermission(req,res,'edit_catalog'); if (!editor) return;
+      const body = await readBody(req);
+      const stored = {};
+      const existingCover = String(body.source || '');
+      if (body.original || body.thumb || body.display) {
+        if (body.original) stored.image = storeCover(decodeCoverData(body.original));
+        else if (/^\/covers\/[a-f0-9]{64}\.[a-z]+$/.test(existingCover) && fs.existsSync(path.join(COVERS_DIR, path.basename(existingCover)))) stored.image = existingCover;
+        if (body.thumb) stored.thumb = storeCover(decodeCoverData(body.thumb));
+        if (body.display) stored.display = storeCover(decodeCoverData(body.display));
+        if (!stored.image) return send(res,400,{error:'invalid_cover'});
+      } else if (body.dataUrl) stored.image = storeCover(decodeCoverData(body.dataUrl));
+      else if (body.url) stored.image = await fetchCoverFile(body.url);
+      else return send(res,400,{error:'invalid_cover'});
+      return send(res,201, stored);
+    }
     if (req.method === 'POST' && url.pathname === '/api/admin/cache-image') { const viewer = requirePermission(req,res,'edit_catalog'); if (!viewer) return; const body = await readBody(req); const imageUrl = String(body.url || '').trim(); if (!/^https?:\/\//i.test(imageUrl)) return send(res,400,{error:'invalid_image_url'}); const response = await fetch(imageUrl, { redirect:'follow', signal:AbortSignal.timeout(12000), headers:{'user-agent':'Ghazal-Bookstore-Image-Cache/1.0'} }); if (!response.ok) return send(res,422,{error:'image_fetch_failed'}); const contentType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase(); if (!contentType.startsWith('image/')) return send(res,422,{error:'image_not_image'}); const bytes = new Uint8Array(await response.arrayBuffer()); if (bytes.length > 5 * 1024 * 1024) return send(res,413,{error:'image_too_large'}); return send(res,200,{data:`data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`}); }
     if (req.method === 'PUT' && url.pathname === '/api/admin/catalog') {
       if (!can(user,'edit_catalog')) return send(res,403,{error:'permission_denied',permission:'edit_catalog'});
       const body = await readBody(req); const books = Array.isArray(body.books) ? body.books : []; const publishers = Array.isArray(body.publishers) ? body.publishers : []; const stamp = now();
       db.exec('BEGIN IMMEDIATE'); try {
-        const bookUpsert = db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,isbn,pages,image,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,author=excluded.author,publisher=excluded.publisher,category=excluded.category,genre=excluded.genre,price=excluded.price,stock=excluded.stock,isbn=excluded.isbn,pages=excluded.pages,image=excluded.image,note=excluded.note,updated_at=excluded.updated_at');
-        for (const book of books) { if (!book.id || !book.title || !book.author || !book.publisher) throw new Error('invalid_book'); const pages = Math.trunc(Number(book.pages)); bookUpsert.run(String(book.id),String(book.title),String(book.author),String(book.publisher),String(book.category || 'literature'),String(book.genre || 'كتاب'),Math.max(0,Number(book.price)||0),Math.max(0,Number(book.stock)||0),String(book.isbn || ''),Number.isFinite(pages) && pages > 0 ? pages : null,String(book.image || 'meaning.jpg'),String(book.note || book.review || ''),stamp,stamp); }
+        const bookUpsert = db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,isbn,pages,image,thumb,display,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,author=excluded.author,publisher=excluded.publisher,category=excluded.category,genre=excluded.genre,price=excluded.price,stock=excluded.stock,isbn=excluded.isbn,pages=excluded.pages,image=excluded.image,thumb=COALESCE(excluded.thumb,books.thumb),display=COALESCE(excluded.display,books.display),note=excluded.note,updated_at=excluded.updated_at');
+        for (const book of books) { if (!book.id || !book.title || !book.author || !book.publisher) throw new Error('invalid_book'); const pages = Math.trunc(Number(book.pages)); bookUpsert.run(String(book.id),String(book.title),String(book.author),String(book.publisher),String(book.category || 'literature'),String(book.genre || 'كتاب'),Math.max(0,Number(book.price)||0),Math.max(0,Number(book.stock)||0),String(book.isbn || ''),Number.isFinite(pages) && pages > 0 ? pages : null,String(book.image || 'meaning.jpg'),book.thumb ? String(book.thumb) : null,book.display ? String(book.display) : null,String(book.note || book.review || ''),stamp,stamp); }
         const publisherUpsert = db.prepare('INSERT INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET city=excluded.city,description=excluded.description,logo=excluded.logo');
         for (const publisher of publishers) if (publisher.name) publisherUpsert.run(String(publisher.name),String(publisher.city || ''),String(publisher.description || ''),String(publisher.logo || publisher.name.slice(0,1)),stamp);
         for (const key of ['genres','bookGenres','discounts','featured','authorProfiles','publisherFeatures']) if (body[key] !== undefined) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run(key,json(body[key]),stamp);
@@ -284,10 +355,18 @@ async function api(req, res, url) {
 const staticServer = http.createServer(async (req,res) => {
   if (process.env.FORCE_HTTPS === 'true' && req.headers['x-forwarded-proto'] !== 'https') { const host = String(req.headers.host || '').replace(/:\d+$/, ''); res.writeHead(301, { location:`https://${host}${req.url}` }); return res.end(); }
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`); if (url.pathname.startsWith('/api/')) return api(req,res,url);
+  if (url.pathname.startsWith('/covers/')) {
+    const name = url.pathname.slice('/covers/'.length);
+    const type = coverTypes[name.split('.').pop()];
+    const filePath = path.join(COVERS_DIR, name);
+    if (!type || !/^[a-f0-9]{64}\.[a-z]+$/.test(name) || !fs.existsSync(filePath)) { res.writeHead(404, { 'content-type':'text/plain; charset=utf-8', 'x-content-type-options':'nosniff' }); return res.end('Not found'); }
+    res.writeHead(200, { 'content-type':type, 'cache-control':'public, max-age=31536000, immutable', 'x-content-type-options':'nosniff', 'referrer-policy':'strict-origin-when-cross-origin' });
+    return fs.createReadStream(filePath).pipe(res);
+  }
   let filePath = path.normalize(path.join(ROOT, url.pathname === '/' ? 'index.html' : url.pathname)); if (!filePath.startsWith(ROOT) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) filePath = path.join(ROOT,'index.html');
-  const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.xml':'application/xml; charset=utf-8', '.txt':'text/plain; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+  const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.xml':'application/xml; charset=utf-8', '.txt':'text/plain; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.avif':'image/avif', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
   const isAsset = /\.(?:css|js|png|jpg|jpeg|webp|svg|ico|xlsx)$/i.test(filePath);
   res.writeHead(200, { 'content-type':types[path.extname(filePath)] || 'application/octet-stream', 'x-content-type-options':'nosniff', 'x-frame-options':'DENY', 'referrer-policy':'strict-origin-when-cross-origin', 'permissions-policy':'camera=(), microphone=(), geolocation=()', ...(isAsset ? {'cache-control':'public, max-age=86400'} : {'cache-control':'no-cache'}) }); fs.createReadStream(filePath).pipe(res);
 });
 if (require.main === module) staticServer.listen(Number(process.env.PORT || 3000), () => console.log(`Ghazal listening on http://localhost:${process.env.PORT || 3000}`));
-module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload };
+module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, storeCover, COVERS_DIR };

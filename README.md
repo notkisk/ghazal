@@ -16,11 +16,11 @@ The Ecotrack exporter preserves the supplied workbook template and validates the
 
 ### Backups and monitoring
 
-Create a point-in-time SQLite backup with `npm run backup`. Set `GHAZAL_BACKUP_DIR` to store backups outside `.data`, and schedule this command with cron or your hosting provider. The public health check is `GET /api/health`; owners can inspect integration and error diagnostics from `GET /api/admin/diagnostics`.
+Create a point-in-time backup with `npm run backup`. Each run writes a timestamped folder under `.data/backups` containing `ghazal.sqlite` and a `covers/` copy; set `GHAZAL_BACKUP_DIR` to store backups elsewhere and schedule this command with cron or your hosting provider. Covers live outside SQLite (see `GHAZAL_COVERS_DIR`), so restoring only the database loses every cover. The public health check is `GET /api/health`; owners can inspect integration and error diagnostics from `GET /api/admin/diagnostics`.
 
 ### Production deployment
 
-Run the Node process behind a reverse proxy such as Caddy or nginx, terminate TLS at the proxy, and set `FORCE_HTTPS=true` so forwarded HTTP requests redirect to HTTPS. Set `GHAZAL_DATA_DIR` to a persistent disk, configure `GHAZAL_ADMIN_PASSWORD`, and schedule `npm run backup` at least daily. Keep `.data/` out of the public web root and restrict access to `/admin.html` at the proxy if the deployment has an additional access-control layer. The storefront uses `https://alghazal.books/` as its canonical and sitemap origin; change those values in `index.html`, `robots.txt`, and `sitemap.xml` if the real domain differs.
+Run the Node process behind a reverse proxy such as Caddy or nginx, terminate TLS at the proxy, and set `FORCE_HTTPS=true` so forwarded HTTP requests redirect to HTTPS. Set `GHAZAL_DATA_DIR` to a persistent disk, configure `GHAZAL_ADMIN_PASSWORD`, and schedule `npm run backup` at least daily. Cover files default to `<GHAZAL_DATA_DIR>/covers`; set `GHAZAL_COVERS_DIR` only if they should live on a separate persistent disk. Keep `.data/` out of the public web root and restrict access to `/admin.html` at the proxy if the deployment has an additional access-control layer. The storefront uses `https://alghazal.books/` as its canonical and sitemap origin; change those values in `index.html`, `robots.txt`, and `sitemap.xml` if the real domain differs.
 
 ### Railway
 
