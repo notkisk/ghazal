@@ -275,8 +275,8 @@ function renderWorkspaceImmediately() {
     if (ownerTab === 'books') renderBooksWorkspace();
     if (ownerTab === 'publishers') list.innerHTML = publishers.map(publisher => `<div class="admin-row"><span class="admin-avatar">${esc(publisher.logo || publisher.name.slice(0,1))}</span><div><strong>${esc(publisher.name)}</strong><small>${esc(publisher.city || '')}</small></div><span>نشط</span></div>`).join('');
     if (ownerTab === 'authors') list.innerHTML = [...new Set(books.map(book => book.author))].map(author => `<div class="admin-row"><span class="admin-avatar">${esc(author.slice(0,1))}</span><div><strong>${esc(author)}</strong><small>${books.filter(book => book.author === author).length} كتب</small></div><span>كاتب</span></div>`).join('');
-    if (ownerTab === 'genres') list.innerHTML = Object.entries(genres).map(([id, genre]) => `<div class="admin-row"><span class="admin-avatar">✦</span><div><strong>${esc(genre.title)}</strong><small>#genre/${esc(id)}</small></div><span>${books.filter(book => book.category === id).length} كتب</span></div>`).join('');
-    if (ownerTab === 'book-genres') list.innerHTML = `<div class="workspace-section-head"><div><strong>أنواع الكتب المستخدمة في المتجر</strong><small>هذه هي نفس الخيارات التي تظهر في فلتر صفحة كل الكتب وصفحات دور النشر.</small></div><button class="button button-dark" type="button" data-owner-form="book-genre">إضافة نوع كتاب</button></div>${bookGenres.map(genre => `<div class="admin-row"><span class="admin-avatar">⌕</span><div><strong>${esc(genre)}</strong><small>${books.filter(book => genreMatches(book, genre)).length} كتب تستخدم هذا النوع</small></div><span>نوع كتاب</span></div>`).join('') || '<p class="owner-note">أضف أول نوع كتاب من الزر أعلاه.</p>'}`;
+    if (ownerTab === 'genres') list.innerHTML = Object.entries(genres).map(([id, genre]) => `<div class="admin-row"><span class="admin-avatar">✦</span><div><strong>${esc(genre.title)}</strong><small>#genre/${esc(id)}</small></div><span class="admin-row-end"><span>${books.filter(book => book.category === id).length} كتب</span><button class="text-button admin-remove" type="button" data-remove-genre="${esc(id)}">حذف</button></span></div>`).join('');
+    if (ownerTab === 'book-genres') list.innerHTML = `<div class="workspace-section-head"><div><strong>أنواع الكتب المستخدمة في المتجر</strong><small>هذه هي نفس الخيارات التي تظهر في فلتر صفحة كل الكتب وصفحات دور النشر.</small></div><button class="button button-dark" type="button" data-owner-form="book-genre">إضافة نوع كتاب</button></div>${bookGenres.map(genre => `<div class="admin-row"><span class="admin-avatar">⌕</span><div><strong>${esc(genre)}</strong><small>${books.filter(book => genreMatches(book, genre)).length} كتب تستخدم هذا النوع</small></div><span class="admin-row-end"><span>نوع كتاب</span><button class="text-button admin-remove" type="button" data-remove-book-genre="${esc(genre)}">حذف</button></span></div>`).join('') || '<p class="owner-note">أضف أول نوع كتاب من الزر أعلاه.</p>'}`;
     if (ownerTab === 'discounts') renderDiscountWorkspace();
     if (ownerTab === 'featured') renderFeaturedWorkspace();
     if (ownerTab === 'publisher-features') renderPublisherFeaturesWorkspace();
@@ -315,8 +315,8 @@ async function renderOwner() {
   if (ownerTab === 'books') renderBooksWorkspace();
   if (ownerTab === 'publishers') list.innerHTML = publishers.map(publisher => `<div class="admin-row"><span class="admin-avatar">${publisher.logo?.startsWith('data:') ? `<img src="${publisher.logo}" alt="" />` : esc(publisher.logo || publisher.name.slice(0,1))}</span><div><strong>${esc(publisher.name)}</strong><small>${esc(publisher.city || '')}</small></div><span>نشط</span></div>`).join('');
   if (ownerTab === 'authors') list.innerHTML = [...new Set(books.map(book => book.author))].map(author => { const profile = authorProfiles[author]; return `<div class="admin-row"><span class="admin-avatar">${profile?.photo?.startsWith('data:') ? `<img src="${profile.photo}" alt="" />` : esc(author.slice(0,1))}</span><div><strong>${esc(author)}</strong><small>${books.filter(book => book.author === author).length} كتب ${profile ? '· ملف مضاف' : '· ملف اختياري'}</small></div><span>${profile?.featured ? 'مميز' : 'كاتب'}</span></div>`; }).join('');
-  if (ownerTab === 'genres') list.innerHTML = Object.entries(genres).map(([id, genre]) => `<div class="admin-row"><span class="admin-avatar">✦</span><div><strong>${esc(genre.title)}</strong><small>#genre/${esc(id)} · ${esc(genre.description || '')}</small></div><span>${books.filter(book => book.category === id).length} كتب</span></div>`).join('');
-  if (ownerTab === 'book-genres') list.innerHTML = `<div class="workspace-section-head"><div><strong>أنواع الكتب المستخدمة في المتجر</strong><small>هذه هي نفس الخيارات التي تظهر في فلتر صفحة كل الكتب وصفحات دور النشر.</small></div><button class="button button-dark" type="button" data-owner-form="book-genre">إضافة نوع كتاب</button></div>${bookGenres.map(genre => `<div class="admin-row"><span class="admin-avatar">⌕</span><div><strong>${esc(genre)}</strong><small>${books.filter(book => genreMatches(book, genre)).length} كتب تستخدم هذا النوع</small></div><span>نوع كتاب</span></div>`).join('') || '<p class="owner-note">أضف أول نوع كتاب من الزر أعلاه.</p>'}`;
+  if (ownerTab === 'genres') list.innerHTML = Object.entries(genres).map(([id, genre]) => `<div class="admin-row"><span class="admin-avatar">✦</span><div><strong>${esc(genre.title)}</strong><small>#genre/${esc(id)} · ${esc(genre.description || '')}</small></div><span class="admin-row-end"><span>${books.filter(book => book.category === id).length} كتب</span><button class="text-button admin-remove" type="button" data-remove-genre="${esc(id)}">حذف</button></span></div>`).join('');
+  if (ownerTab === 'book-genres') list.innerHTML = `<div class="workspace-section-head"><div><strong>أنواع الكتب المستخدمة في المتجر</strong><small>هذه هي نفس الخيارات التي تظهر في فلتر صفحة كل الكتب وصفحات دور النشر.</small></div><button class="button button-dark" type="button" data-owner-form="book-genre">إضافة نوع كتاب</button></div>${bookGenres.map(genre => `<div class="admin-row"><span class="admin-avatar">⌕</span><div><strong>${esc(genre)}</strong><small>${books.filter(book => genreMatches(book, genre)).length} كتب تستخدم هذا النوع</small></div><span class="admin-row-end"><span>نوع كتاب</span><button class="text-button admin-remove" type="button" data-remove-book-genre="${esc(genre)}">حذف</button></span></div>`).join('') || '<p class="owner-note">أضف أول نوع كتاب من الزر أعلاه.</p>'}`;
   if (ownerTab === 'discounts') renderDiscountWorkspace();
   if (ownerTab === 'featured') renderFeaturedWorkspace();
   if (ownerTab === 'publisher-features') renderPublisherFeaturesWorkspace();
@@ -636,6 +636,29 @@ $('#owner-list').addEventListener('click', event => {
   if (saveUser) { const card = saveUser.closest('[data-user-id]'); const permissions = Object.fromEntries([...card.querySelectorAll('[data-user-permission]')].map(input => [input.dataset.userPermission, input.checked])); const role = card.querySelector('[data-user-role]')?.value || 'admin'; window.GhazalAPI.updateStaff(sessionStorage.getItem(ADMIN_SESSION_KEY), card.dataset.userId, { role, permissions }).then(() => { alert('تم حفظ صلاحيات المستخدم.'); renderTeamWorkspace(); }).catch(error => alert(`تعذر حفظ الصلاحيات: ${error.message || 'خطأ غير معروف'}`)); return; }
   const removeStaff = event.target.closest('[data-remove-staff]');
   if (removeStaff) { if (!window.confirm('إزالة وصول هذا الموظف؟ ستُلغى جلساته فورًا.')) return; window.GhazalAPI.deleteStaff(sessionStorage.getItem(ADMIN_SESSION_KEY), removeStaff.dataset.removeStaff).then(() => renderOwner()).catch(() => alert('تعذر إزالة الموظف.')); return; }
+  const removeGenre = event.target.closest('[data-remove-genre]');
+  if (removeGenre) {
+    const id = removeGenre.dataset.removeGenre; const genre = genres[id];
+    if (!genre) return;
+    const used = books.filter(book => book.category === id).length;
+    if (used) { alert(`لا يمكن حذف «${esc(genre.title)}»؛ ${used} كتب ما زالت تستخدم هذا التصنيف. عدّل تصنيف تلك الكتب أولًا.`); return; }
+    if (Object.keys(genres).length <= 1) { alert('يجب الإبقاء على تصنيف واحد على الأقل في المتجر.'); return; }
+    if (!window.confirm(`حذف التصنيف «${esc(genre.title)}»؟`)) return;
+    const remaining = { ...genres }; delete remaining[id];
+    genres = remaining; save('ghazal.genres.v1', genres);
+    flushCatalogSync().catch(() => alert('تم الحذف محليًا، لكن تعذرت مزامنته مع الخادم.'));
+    renderOwner(); return;
+  }
+  const removeBookGenre = event.target.closest('[data-remove-book-genre]');
+  if (removeBookGenre) {
+    const value = removeBookGenre.dataset.removeBookGenre;
+    const used = books.filter(book => genreMatches(book, value)).length;
+    if (used) { alert(`لا يمكن حذف «${esc(value)}»؛ ${used} كتب ما زالت تستخدم هذا النوع. عدّل نوع تلك الكتب أولًا من فضاء الكتب.`); return; }
+    if (!window.confirm(`حذف نوع الكتاب «${esc(value)}» من الفلاتر؟`)) return;
+    bookGenres = bookGenres.filter(genre => genre !== value); save('ghazal.bookGenres.v1', bookGenres);
+    flushCatalogSync().catch(() => alert('تم الحذف محليًا، لكن تعذرت مزامنته مع الخادم.'));
+    renderOwner(); return;
+  }
   const confirmOrder = event.target.closest('[data-order-confirm]');
   if (confirmOrder) { const reference = confirmOrder.dataset.orderConfirm; confirmOrder.disabled = true; window.GhazalAPI.updateOrder(sessionStorage.getItem(ADMIN_SESSION_KEY), reference, 'confirmed').then(() => { const order = orders.find(item => item.reference === reference); if (order) order.status = 'confirmed'; renderOwner(); }).catch(error => { confirmOrder.disabled = false; alert(orderUpdateErrorMessage(error)); }); return; }
   const unconfirmOrder = event.target.closest('[data-order-unconfirm]');

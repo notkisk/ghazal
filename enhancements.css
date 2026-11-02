@@ -368,3 +368,6 @@ img.cover.edition-image{display:block;padding:0;object-fit:cover;object-position
 .shelf-carousel-viewport.is-dragging *{user-select:none}
 .shelf-carousel-viewport img{-webkit-user-drag:none;user-select:none}
 .shelf-carousel-viewport a{-webkit-user-drag:none}
+.admin-row-end{display:flex;align-items:center;gap:12px;justify-content:flex-end}
+.admin-remove{color:#9b3d33}
+.admin-remove:hover{color:var(--ink)}
