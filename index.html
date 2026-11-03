@@ -21,7 +21,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
-    <link rel="stylesheet" href="enhancements.css?v=20261029-15" />
+    <link rel="stylesheet" href="enhancements.css?v=20261103-1" />
     <link rel="stylesheet" href="theme-white.css?v=20261015-3" />
   </head>
   <body>
@@ -38,7 +38,7 @@
           <a href="#favorites">محفوظاتي</a>
           <a href="#selections">مختاراتنا</a>
           <a href="#new">وصل حديثًا</a>
-          <a href="#genre/literature">التصنيفات</a>
+          <a href="#departments">التصنيفات</a>
           <a href="#departments">الأقسام</a>
           <a href="#publishers">دور النشر</a>
         </nav>
@@ -59,12 +59,12 @@
           <div class="hero-links"><a class="button button-dark" href="#selections">تصفّح مختاراتنا <span aria-hidden="true">↖</span></a><a class="text-link" href="#story">تعرّف إلى الغزال <span aria-hidden="true">←</span></a></div>
           <div class="hero-bottom"><span class="asterisk">✳</span><span>كتبٌ تقرؤها اليوم، وتعود إليها غدًا.</span></div>
         </div>
-        <div class="hero-art" aria-label="مختارات من كتب الغزال">
+        <div class="hero-art" id="hero-art" aria-label="مختارات من كتب الغزال">
           <span class="hero-arch"></span>
-          <div class="hero-book hero-book-back"><div class="cover cover-world"><span class="cover-publisher">دار التنوير</span><span class="world-orbit"></span><span class="cover-title">عالم<br />الأمس</span><span class="cover-author">شتيفان تسفايغ</span></div></div>
-          <div class="hero-book hero-book-left"><div class="cover cover-stranger"><span class="cover-publisher">منشورات الجمل</span><span class="sun-disc"></span><span class="cover-title">الغريب</span><span class="cover-author">ألبير كامو</span><span class="cover-detail">L'ÉTRANGER</span></div></div>
-          <div class="hero-book hero-book-front"><div class="cover cover-solitude"><span class="cover-publisher">دار الآداب</span><span class="solitude-leaves">✺<br />✺</span><span class="cover-title">مئة عام<br />من العزلة</span><span class="cover-author">غابرييل غارسيا ماركيز</span><span class="cover-detail">CIEN AÑOS DE SOLEDAD</span></div></div>
-          <p class="hero-art-note"><span>01 / 03</span> من رفوفنا إلى رفّك</p>
+          <div class="hero-book hero-book-back" hidden></div>
+          <div class="hero-book hero-book-left" hidden></div>
+          <div class="hero-book hero-book-front" hidden></div>
+          <p class="hero-art-note" hidden><span>01 / 03</span> من رفوفنا إلى رفّك</p>
           <span class="hero-art-curve" aria-hidden="true"></span>
         </div>
       </section>
@@ -73,24 +73,14 @@
 
       <section class="selections section-pad wrap" id="selections">
         <div class="section-heading"><div><p class="eyebrow">على رفّ المحرّر <span class="tiny-star">✦</span> العدد ٠١</p><h2>مختارات <em>الغزال</em></h2></div><div class="heading-aside"><p>كتب نؤمن أن للقارئ معها موعدًا لا يتكرر.</p><a class="underlined-link" href="#new">استكشف كل الكتب <span>↖</span></a></div></div>
-        <div class="featured-layout">
-          <article class="feature-story">
-            <div class="feature-book-stage"><div class="cover cover-meaning cover-large"><span class="cover-publisher">دار التنوير</span><span class="meaning-lines">مَنْ يملكُ سببًا ليعيش<br />يستطيعُ احتمالَ أيّ كيف</span><span class="cover-title">الإنسان يبحث<br />عن معنى</span><span class="cover-author">فيكتور فرانكل</span><span class="cover-detail">MAN'S SEARCH FOR MEANING</span></div><span class="stage-index">G / 01</span></div>
-            <div class="feature-description"><div><span class="category-label">فكر · سيرة</span><h3>الإنسان يبحث عن معنى</h3><p>رحلة استثنائية في قدرة الإنسان على إيجاد المعنى، حتى في أحلك اللحظات.</p></div><button class="round-add" data-add="الإنسان يبحث عن معنى" aria-label="أضف الإنسان يبحث عن معنى إلى السلة">↖</button></div>
-          </article>
-          <div class="selection-list">
-            <article class="selection-item"><span class="item-number">٠١</span><div class="cover cover-letters cover-small"><span class="cover-publisher">دار المدى</span><span class="letters-flower">✽</span><span class="cover-title">رسائل إلى<br />شاعر شاب</span><span class="cover-author">راينر ماريا ريلكه</span></div><div class="selection-info"><span class="category-label">أدب · رسائل</span><h3>رسائل إلى شاعر شاب</h3><p>راينر ماريا ريلكه</p><button class="item-link" data-add="رسائل إلى شاعر شاب">أضف إلى رفّك <span>↖</span></button></div></article>
-            <article class="selection-item"><span class="item-number">٠٢</span><div class="cover cover-orientalism cover-small"><span class="cover-publisher">مؤسسة الأبحاث العربية</span><span class="orientalism-shape"></span><span class="cover-title">الاستشراق</span><span class="cover-author">إدوارد سعيد</span></div><div class="selection-info"><span class="category-label">فكر · نقد ثقافي</span><h3>الاستشراق</h3><p>إدوارد سعيد</p><button class="item-link" data-add="الاستشراق">أضف إلى رفّك <span>↖</span></button></div></article>
-            <article class="selection-item"><span class="item-number">٠٣</span><div class="cover cover-meditations cover-small"><span class="cover-publisher">دار الكرمة</span><span class="meditation-circle"></span><span class="cover-title">تأملات</span><span class="cover-author">ماركوس أوريليوس</span></div><div class="selection-info"><span class="category-label">فلسفة · كلاسيكيات</span><h3>تأملات</h3><p>ماركوس أوريليوس</p><button class="item-link" data-add="تأملات">أضف إلى رفّك <span>↖</span></button></div></article>
-          </div>
-        </div>
+        <div class="featured-layout"></div>
       </section>
 
       <section class="quote-band" id="story"><div class="wrap quote-inner"><span class="quote-mark">«</span><blockquote>في كل كتاب نافذة، وفي كل قارئ عالمٌ ينتظر أن يُكتشف.</blockquote><div class="quote-seal"><span>الغزال</span><small>للكتب</small></div></div></section>
 
       <section class="new-arrivals section-pad wrap" id="new">
-        <div class="section-heading compact"><div><p class="eyebrow">ما وصل إلى الرفوف للتو</p><h2>وصل <em>حديثًا</em></h2></div><a class="underlined-link" href="#departments">تجوّل بين الأقسام <span>↖</span></a></div>
-        <div class="filter-row" role="group" aria-label="تصفية الكتب"><button class="filter active" data-filter="all">كل الكتب</button><button class="filter" data-filter="literature">الأدب العالمي</button><button class="filter" data-filter="thought">الفكر والفلسفة</button><button class="filter" data-filter="history">التاريخ والإنسانيات</button></div>
+        <div class="section-heading compact"><div><p class="eyebrow">ما وصل إلى الرفوف للتو</p><h2>وصل <em>حديثًا</em></h2></div><a class="underlined-link" href="#catalog">كل الكتب <span>↖</span></a></div>
+        <div class="filter-row" id="home-filters" role="group" aria-label="تصفية الكتب"><button class="filter active" data-filter="all">كل الكتب</button></div>
         <div class="book-grid" id="book-grid">
         </div>
       </section>
@@ -98,9 +88,9 @@
 
       <section class="publisher-featured section-pad wrap" id="publisher-featured" hidden aria-label="دور نشر مميزة"></section>
 
-      <section class="departments" id="departments"><div class="wrap departments-inner"><div class="department-intro"><p class="eyebrow">تجوّل على مهل</p><h2>لكل قارئٍ<br /><em>بابه الخاص.</em></h2><p>اتبع فضولك، ودع الكتب تقودك إلى حيث لم تكن تنوي الذهاب.</p><span class="department-doodle" aria-hidden="true">↝</span></div><div class="department-links"><a href="#genre/literature"><span class="dep-num">01</span><span>الأدب العالمي<small>حكايات تعبر الحدود</small></span><b>↖</b></a><a href="#genre/thought"><span class="dep-num">02</span><span>الفكر والفلسفة<small>أسئلة توسّع الأفق</small></span><b>↖</b></a><a href="#genre/history"><span class="dep-num">03</span><span>التاريخ والإنسانيات<small>لفهم ما كان وما يكون</small></span><b>↖</b></a><a href="#bestsellers"><span class="dep-num">04</span><span>الأكثر قراءة<small>كتب أحبّها القراء</small></span><b>↖</b></a></div></div></section>
+      <section class="departments" id="departments"><div class="wrap departments-inner"><div class="department-intro"><p class="eyebrow">تجوّل على مهل</p><h2>لكل قارئٍ<br /><em>بابه الخاص.</em></h2><p>اتبع فضولك، ودع الكتب تقودك إلى حيث لم تكن تنوي الذهاب.</p><span class="department-doodle" aria-hidden="true">↝</span></div><div class="department-links" id="department-links"></div></div></section>
 
-      <section class="publishers section-pad wrap" id="publishers" hidden><div class="section-heading compact"><div><p class="eyebrow">شراكة مع صنّاع الكتاب</p><h2>إصدارات <em>دور النشر</em></h2></div><p class="publishers-intro">نحتفي بالناشرين الذين يوسّعون المكتبة العربية، كتابًا بعد كتاب.</p></div><div class="publisher-grid"><a class="publisher" href="#publisher/دار%20الآداب"><span class="publisher-monogram">ا</span><strong>دار الآداب</strong><small>بيروت · منذ ١٩٥٦</small></a><a class="publisher" href="#publisher/دار%20التنوير"><span class="publisher-monogram">ت</span><strong>دار التنوير</strong><small>كتب تضيء الطريق</small></a><a class="publisher" href="#publisher/دار%20المدى"><span class="publisher-monogram">م</span><strong>دار المدى</strong><small>الأدب والفكر والفنون</small></a><a class="publisher" href="#publisher/منشورات%20الجمل"><span class="publisher-monogram">ج</span><strong>منشورات الجمل</strong><small>أصوات من العالم</small></a></div></section>
+      <section class="publishers section-pad wrap" id="publishers" hidden><div class="section-heading compact"><div><p class="eyebrow">شراكة مع صنّاع الكتاب</p><h2>إصدارات <em>دور النشر</em></h2></div><p class="publishers-intro">نحتفي بالناشرين الذين يوسّعون المكتبة العربية، كتابًا بعد كتاب.</p></div><div class="publisher-grid" id="home-publisher-grid"></div></section>
 
 
       <section class="newsletter wrap"><div><p class="eyebrow">رسالة من رفوف الغزال</p><h2>كتاب جيّد،<br /><em>بين حينٍ وآخر.</em></h2></div><form id="newsletter-form"><label for="email">مختارات وقراءات تصل إلى بريدك بهدوء.</label><div class="email-field"><input id="email" type="email" required placeholder="بريدك الإلكتروني" autocomplete="email" /><button type="submit" aria-label="اشترك في الرسالة">↖</button></div><small id="newsletter-message">معاينة للاشتراك: يُحفظ البريد على هذا الجهاز فقط.</small></form></section>
@@ -110,7 +100,7 @@
       <section class="app-page wrap" id="catalog-page" aria-labelledby="catalog-title">
         <div class="page-hero"><div><p class="eyebrow">مكتبة الغزال / الفهرس الكامل</p><h1 id="catalog-title">كل <em>الكتب</em></h1><p>ابحث في الرفوف، صفِّ النتائج، وافتح صفحة أي كتاب لتعرف حكايته أكثر.</p></div></div>
         <div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="catalog-search" type="search" placeholder="ابحث بالعنوان أو المؤلف أو دار النشر أو ISBN" /></label><select id="catalog-sort" aria-label="ترتيب الكتب"><option value="featured">ترتيب: مختارات الغزال</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option><option value="price-high">السعر: الأعلى أولًا</option></select></div>
-        <div class="catalog-filters" id="catalog-filters"><button class="active" data-catalog-filter="all">كل الكتب</button><button data-catalog-filter="literature">الأدب العالمي</button><button data-catalog-filter="thought">الفكر والفلسفة</button><button data-catalog-filter="history">التاريخ والإنسانيات</button></div>
+        <div class="catalog-filters" id="catalog-filters"><button class="active" data-catalog-filter="all">كل الكتب</button></div>
         <div class="catalog-filter-panel" aria-label="فلاتر إضافية"><div class="catalog-filter-intro"><span class="filter-mark" aria-hidden="true">✦</span><div><strong>صفِّ رفوفك</strong><small>اختر دار النشر أو النوع أو نطاق السعر.</small></div></div><label>دار النشر<select id="catalog-publisher-filter"><option value="all">كل دور النشر</option></select></label><label>النوع<select id="catalog-genre-filter"><option value="all">كل الأنواع</option></select></label><label>السعر من<input id="catalog-price-min" type="number" min="0" step="100" placeholder="دج" inputmode="numeric" /></label><label>السعر إلى<input id="catalog-price-max" type="number" min="0" step="100" placeholder="دج" inputmode="numeric" /></label><button id="catalog-clear-filters" class="text-button" type="button">مسح الفلاتر</button></div>
         <div class="catalog-summary"><strong id="catalog-count"></strong><span id="catalog-filter-summary">يمكنك فتح التفاصيل، حفظ الكتاب، أو إضافته إلى السلة.</span></div>
         <div class="catalog-grid" id="catalog-grid"></div><p class="empty-state" id="catalog-empty" hidden>لا توجد نتائج مطابقة. جرّب كلمة بحث أخرى أو أزل أحد الفلاتر.</p>
@@ -132,7 +122,7 @@
         <div class="page-hero dashboard-hero"><div><p class="eyebrow">الغزال / مساحة الإدارة</p><h1 id="dashboard-title">لوحة <em>المكتبة</em></h1><p>تابع أداء المتجر، ونظّم الكتب ودور النشر من مكان واحد.</p></div><div class="dashboard-actions"><button class="button button-dark" data-open-admin="book">إضافة كتاب <span>＋</span></button><button class="button button-outline" data-open-admin="publisher">إضافة دار نشر <span>＋</span></button></div></div>
         <div class="stat-grid"><article><span>زيارات هذا الشهر</span><strong>١٢٬٨٤٠</strong><small class="positive">↑ ١٨٫٤٪ عن الشهر الماضي</small></article><article><span>الطلبات الجديدة</span><strong id="dashboard-orders">٢٨٦</strong><small class="positive">↑ ٩٫٢٪ هذا الأسبوع</small></article><article><span>إيرادات الشهر</span><strong>٨٤٦٬٥٠٠ د.ج</strong><small class="positive">↑ ١٢٫٨٪ عن الشهر الماضي</small></article><article><span>معدل التحويل</span><strong>٤٫٧٪</strong><small>من الزيارة إلى الطلب</small></article></div>
         <div class="dashboard-columns"><article class="dashboard-card chart-card"><div class="card-heading"><div><p class="eyebrow">آخر ٧ أيام</p><h2>الزيارات <em>والطلبات</em></h2></div><span class="chart-legend"><i></i> الزيارات <i></i> الطلبات</span></div><div class="bar-chart" aria-label="رسم بياني للزيارات والطلبات"><div style="--visit:72%;--orders:29%"><span>السبت</span></div><div style="--visit:86%;--orders:39%"><span>الأحد</span></div><div style="--visit:61%;--orders:24%"><span>الإثنين</span></div><div style="--visit:94%;--orders:51%"><span>الثلاثاء</span></div><div style="--visit:78%;--orders:34%"><span>الأربعاء</span></div><div style="--visit:100%;--orders:58%"><span>الخميس</span></div><div style="--visit:88%;--orders:44%"><span>الجمعة</span></div></div></article><article class="dashboard-card"><div class="card-heading"><div><p class="eyebrow">الأكثر طلبًا</p><h2>كتب <em>رائجة</em></h2></div><a href="#catalog" class="underlined-link">كل الكتب ↖</a></div><div id="top-books" class="top-books"></div></article></div>
-        <div class="dashboard-columns lower"><article class="dashboard-card"><div class="card-heading"><div><p class="eyebrow">المحتوى</p><h2>إدارة <em>الفهرس</em></h2></div><button class="text-button" data-open-admin="book">＋ إضافة</button></div><div class="admin-tabs"><button class="active" data-admin-tab="books">الكتب <span id="book-total"></span></button><button data-admin-tab="publishers">دور النشر <span id="publisher-total"></span></button><button data-admin-tab="authors">المؤلفون <span id="author-total"></span></button></div><div id="admin-list"></div></article><article class="dashboard-card activity-card"><div class="card-heading"><div><p class="eyebrow">آخر الحركة</p><h2>نشاط <em>المتجر</em></h2></div><button id="export-ecotrack" class="text-button" type="button">تحميل Ecotrack CSV ↙</button></div><div class="activity-list"><p><b>طلب جديد</b><span>٣ كتب · منذ ١٢ دقيقة</span><strong>+ ٧٬٨٠٠ د.ج</strong></p><p><b>كتاب أضيف</b><span>اسم الوردة · منذ ساعة</span><strong>مكتمل</strong></p><p><b>دار نشر جديدة</b><span>دار نينوى · منذ ٣ ساعات</span><strong>مكتمل</strong></p></div></article></div>
+        <div class="dashboard-columns lower"><article class="dashboard-card"><div class="card-heading"><div><p class="eyebrow">المحتوى</p><h2>إدارة <em>الفهرس</em></h2></div><button class="text-button" data-open-admin="book">＋ إضافة</button></div><div class="admin-tabs"><button class="active" data-admin-tab="books">الكتب <span id="book-total"></span></button><button data-admin-tab="publishers">دور النشر <span id="publisher-total"></span></button><button data-admin-tab="authors">المؤلفون <span id="author-total"></span></button></div><div id="admin-list"></div></article><article class="dashboard-card activity-card"><div class="card-heading"><div><p class="eyebrow">آخر الحركة</p><h2>نشاط <em>المتجر</em></h2></div><button id="export-ecotrack" class="text-button" type="button">تحميل Ecotrack CSV ↙</button></div><div class="activity-list" id="activity-list"></div></article></div>
       </section>
     </main>
 
@@ -142,6 +132,6 @@
     <div class="overlay drawer-overlay" id="cart-overlay" hidden><div class="cart-panel" role="dialog" aria-modal="true" aria-label="سلة الكتب"><div class="cart-header"><div><p class="eyebrow">من رفوفنا إلى رفّك</p><h2>سلة الكتب</h2></div><button class="close-button" data-close="cart-overlay" aria-label="إغلاق">×</button></div><div id="cart-items" class="cart-items"><p class="empty-cart">سلتك تنتظر كتابًا جيدًا.</p></div><div class="cart-footer"><p>اختر عناوينك المفضّلة، ثم راسلنا لإتمام الطلب.</p><a id="cart-order" class="button button-dark" href="mailto:hello@alghazal.books?subject=طلب%20كتب%20من%20الغزال">أرسل طلب الكتب <span>↖</span></a></div></div></div>
     <script src="data/algeria-communes-58-wilayas.js"></script>
     <script src="api.js"></script>
-    <script src="script.js?v=20261102-1"></script>
+    <script src="script.js?v=20261103-1"></script>
   </body>
 </html>

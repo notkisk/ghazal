@@ -1,10 +1,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { db, COVERS_DIR } = require('../server');
 
 const root = path.join(__dirname, '..');
 const dataDir = process.env.GHAZAL_DATA_DIR || path.join(root, '.data');
 const source = path.join(dataDir, 'ghazal.sqlite');
+const coverDir = process.env.GHAZAL_COVERS_DIR || path.join(dataDir, 'covers');
 const backupDir = process.env.GHAZAL_BACKUP_DIR || path.join(dataDir, 'backups');
 
 if (!fs.existsSync(source)) {
@@ -12,7 +12,9 @@ if (!fs.existsSync(source)) {
   process.exit(1);
 }
 
-db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+// Copy the database directly instead of requiring server.js: requiring the
+// server opens the database and runs migrations/resets, and a backup must never
+// mutate the data it is about to preserve.
 fs.mkdirSync(backupDir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 // One folder per backup so the SQLite file and the cover files it references
@@ -22,9 +24,9 @@ const destination = path.join(backupDir, `ghazal-${stamp}`);
 fs.mkdirSync(destination, { recursive: true });
 fs.copyFileSync(source, path.join(destination, 'ghazal.sqlite'));
 let covers = 0;
-if (fs.existsSync(COVERS_DIR)) {
+if (fs.existsSync(coverDir)) {
   const coverBackup = path.join(destination, 'covers');
-  fs.cpSync(COVERS_DIR, coverBackup, { recursive: true });
+  fs.cpSync(coverDir, coverBackup, { recursive: true });
   covers = fs.readdirSync(coverBackup).length;
 }
 console.log(`Backup created: ${destination} (${covers} cover files)`);

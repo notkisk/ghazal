@@ -1,5 +1,16 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const CATALOG_CACHE_VERSION = '2026-11-clean-slate';
+// Clear catalog caches from earlier demo/import versions once per browser. The
+// cart and favorites are left intact; they already drop ids missing from the new
+// catalog.
+try {
+  const keep = new Set(['ghazal.cacheVersion','ghazal.metaPixelId','ghazal.cart.v2','ghazal.favorites.v2']);
+  if (localStorage.getItem('ghazal.cacheVersion') !== CATALOG_CACHE_VERSION) {
+    Object.keys(localStorage).filter(key => key.startsWith('ghazal.') && !keep.has(key)).forEach(key => localStorage.removeItem(key));
+    localStorage.setItem('ghazal.cacheVersion', CATALOG_CACHE_VERSION);
+  }
+} catch { /* Storage is optional. */ }
 
 function enhanceSelect(select) {
   if (!select || select.dataset.customized) return;
@@ -37,57 +48,15 @@ selectObserver.observe(document.body, { childList: true, subtree: true });
 $$('select').forEach(enhanceSelect);
 document.addEventListener('click', event => { $$('.custom-select.open').forEach(wrapper => { if (!wrapper.contains(event.target)) { wrapper.classList.remove('open'); wrapper.querySelector('.custom-select-trigger')?.setAttribute('aria-expanded', 'false'); } }); });
 
-let books = [
-  { id: 'stranger', title: 'الغريب', author: 'ألبير كامو', publisher: 'منشورات الجمل', category: 'literature', genre: 'رواية مترجمة', price: 1900, image: 'stranger.jpg', note: 'رواية قصيرة ومكثّفة عن الغربة والعبث والإنسان في مواجهة العالم.' },
-  { id: 'world-yesterday', title: 'عالم الأمس', author: 'شتيفان تسفايغ', publisher: 'دار المدى', category: 'history', genre: 'سيرة · تاريخ', price: 2600, image: 'world-yesterday.jpg', note: 'شهادة أدبية حميمة على أوروبا التي غيّرتها الحرب إلى الأبد.' },
-  { id: 'meaning', title: 'الإنسان يبحث عن معنى', author: 'فيكتور فرانكل', publisher: 'آكيول', category: 'thought', genre: 'فكر · علم نفس', price: 2200, image: 'meaning.jpg', note: 'تأمل مؤثر في قدرة الإنسان على العثور على معنى وسط أقسى الظروف.' },
-  { id: 'orientalism', title: 'الاستشراق', author: 'إدوارد سعيد', publisher: 'دار الآداب', category: 'history', genre: 'فكر · نقد ثقافي', price: 3900, image: 'orientalism.jpg', note: 'كتاب غيّر طريقة قراءة العلاقة بين المعرفة والسلطة وصورة الشرق.' },
-  { id: 'meditations', title: 'التأملات', author: 'ماركوس أوريليوس', publisher: 'طبعة عربية', category: 'thought', genre: 'فلسفة · كلاسيكيات', price: 2100, image: 'meditations.jpg', note: 'ملاحظات شخصية عن الاتزان والفضيلة ومواجهة تقلّبات الحياة.' },
-  { id: 'solitude', title: 'مئة عام من العزلة', author: 'غابرييل غارسيا ماركيز', publisher: 'دار التنوير', category: 'literature', genre: 'رواية مترجمة', price: 3200, image: 'solitude.jpg', note: 'ملحمة ماكوندو الساحرة، حيث تختلط الذاكرة بالأسطورة والحياة.' },
-  { id: 'letters', title: 'رسائل إلى شاعر شاب', author: 'راينر ماريا ريلكه', publisher: 'دار الكرمة', category: 'literature', genre: 'أدب · رسائل', price: 1500, image: 'letters.jpg', note: 'رسائل صادقة عن الكتابة والوحدة والشجاعة على أن يعيش المرء حياته.' },
-  { id: 'sophies-world', title: 'عالم صوفي', author: 'جوستاين غاردر', publisher: 'دار المنى', category: 'thought', genre: 'رواية · فلسفة', price: 3600, image: 'sophies-world.jpg', note: 'رحلة روائية تقود أسئلة الفلسفة الكبرى إلى باب فتاة فضولية.' },
-  { id: 'plague', title: 'الطاعون', author: 'ألبير كامو', publisher: 'دار التنوير', category: 'literature', genre: 'رواية مترجمة', price: 2400, image: 'plague.jpg', note: 'حكاية مدينة محاصرة، واختبار إنساني للتضامن والاختيار.' },
-  { id: 'name-of-rose', title: 'اسم الوردة', author: 'أمبرتو إيكو', publisher: 'دار الكتاب الجديد', category: 'literature', genre: 'رواية · تاريخ', price: 3200, image: 'name-of-rose.jpg', note: 'لغز في دير من العصور الوسطى يفتح أبواب الكتب والمعرفة والسلطة.' },
-  { id: 'art-of-loving', title: 'فن الحب', author: 'إريك فروم', publisher: 'طبعة عربية', category: 'thought', genre: 'فكر · إنسانيات', price: 1800, image: 'art-of-loving.jpg', note: 'قراءة في الحب بوصفه فنًا يحتاج إلى معرفة وممارسة وعناية.' },
-  { id: 'brief-time', title: 'تاريخ موجز للزمان', author: 'ستيفن هوكينغ', publisher: 'دار التنوير', category: 'history', genre: 'علم · إنسانيات', price: 2900, image: 'brief-time.jpg', note: 'أسئلة الكون والزمن والثقوب السوداء في كتاب علمي صار من كلاسيكيات العصر.' },
-];
-let publishers = [
-  { id: 'adab', name: 'دار الآداب', city: 'بيروت', since: 'منذ ١٩٥٦', description: 'دار عربية عريقة احتضنت أصواتًا أدبية وفكرية لا تزال حاضرة في الذاكرة.', logo: 'ا' },
-  { id: 'tanweer', name: 'دار التنوير', city: 'بيروت · القاهرة', since: 'كتب تضيء الطريق', description: 'إصدارات تنحاز إلى المعرفة الحرة، والترجمات التي توسّع أفق القارئ.', logo: 'ت' },
-  { id: 'mada', name: 'دار المدى', city: 'دمشق · بيروت', since: 'الأدب والفكر والفنون', description: 'مشروع ثقافي عربي يعتني بالأدب والفكر والفنون والكتب المرجعية.', logo: 'م' },
-  { id: 'jamal', name: 'منشورات الجمل', city: 'بيروت · بغداد', since: 'أصوات من العالم', description: 'ترجمات ونصوص عربية تمنح القارئ فرصة الإصغاء إلى أصوات مختلفة.', logo: 'ج' },
-  { id: 'arab-network', name: 'الشبكة العربية للأبحاث والنشر', city: 'الدوحة', since: 'معرفة عربية رصينة', description: 'كتب الفكر والتاريخ والسياسة التي تمنح السؤال العربي مساحة أوسع.', logo: 'ش' },
-  { id: 'rafidain', name: 'دار الرافدين', city: 'بيروت · بغداد', since: 'للكتاب العربي الجميل', description: 'إصدارات تحمل حيوية المكتبة العربية، بين التراث والقراءة المعاصرة.', logo: 'ر' },
-  { id: 'karma', name: 'دار الكرمة', city: 'القاهرة', since: 'منذ ٢٠١٥', description: 'كتب مختارة في الأدب والفكر والعلوم الإنسانية بلغة قريبة وحسّ أدبي.', logo: 'ك' },
-];
-publishers.push(...readStorage('ghazal.customPublishers.v1', []));
-const customBooks = readStorage('ghazal.customBooks.v1', []);
-const bookOverrides = new Map(customBooks.map(book => [book.id, book]));
-books = books.map(book => ({ ...book, ...(bookOverrides.get(book.id) || {}) }));
-customBooks.filter(book => !books.some(existing => existing.id === book.id)).forEach(book => books.push(book));
-books.forEach(book => { if (!Number.isFinite(Number(book.stock))) book.stock = 10; });
-let authorProfiles = readStorage('ghazal.authorProfiles.v1', {});
-let genres = {
-  literature: { title: 'الأدب العالمي', description: 'حكايات تعبر الحدود، وأصوات تترك أثرًا بعد الصفحة الأخيرة.' },
-  thought: { title: 'الفكر والفلسفة', description: 'أسئلة توسّع الأفق، وكتب تساعدنا على النظر من زاوية أخرى.' },
-  history: { title: 'التاريخ والإنسانيات', description: 'لفهم ما كان، وما يكون، والإنسان في قلب الحكاية.' }
-};
-Object.assign(genres, readStorage('ghazal.genres.v1', {}));
-let byId = Object.fromEntries(books.map(book => [book.id, book]));
-const defaultCollections = [
-  { id: 'collection-literature', slug: 'rwayat-wa-adab', title: 'روايات وأدب', description: 'حكايات تبقى معك بعد الصفحة الأخيرة.', bookIds: books.filter(book => book.category === 'literature').map(book => book.id), active: true, homepage: true },
-  { id: 'collection-thought', slug: 'falsafa-wa-fikr', title: 'فلسفة وفكر', description: 'أسئلة توسّع الأفق وتعيد ترتيب الداخل.', bookIds: books.filter(book => book.category === 'thought').map(book => book.id), active: true, homepage: true },
-  { id: 'collection-publishers', slug: 'ikhtiyarat-al-nashirin', title: 'اختيارات من دور النشر', description: 'كتب مختارة من ناشرين نحب مشروعهم.', bookIds: books.slice(0, 8).map(book => book.id), active: true, homepage: true }
-];
-let collections = readStorage('ghazal.collections.v1', defaultCollections);
+let books = [];
+let publishers = [];
+let authorProfiles = {};
+let genres = {};
+let byId = {};
+let collections = readStorage('ghazal.collections.v1', []);
 collections = collections.map(collection => ({ ...collection, bookIds: (collection.bookIds || []).filter(id => byId[id]) }));
-let featuredBookIds = readStorage('ghazal.featuredBooks.v1', ['meaning','letters','orientalism','meditations']);
-let publisherFeatures = readStorage('ghazal.publisherFeatures.v1', [
-  { id:'mada', publisher:'دار المدى', active:true, layoutVersion:3, slogan:'بيت الثقافة والإبداع', kicker:'أدبٌ وفكرٌ وفنون', description:'رفّ من الكتب التي تصنع ذائقة، وتترك أثرًا أبعد من الصفحة الأخيرة.', accent:'#e51c2a', surface:'#f4d8c8', ink:'#251b19', mark:'م' },
-  { id:'jamal', publisher:'منشورات الجمل', active:true, slogan:'أصواتٌ من العالم', kicker:'أصواتٌ لا تشبه سواها', description:'دار عريقة في الترجمة الأدبية والفلسفية، وكتب تمنح القارئ فرصة الإصغاء إلى أصوات مختلفة.', accent:'#bd1d2d', surface:'#e9d8b9', ink:'#271914', mark:'ج' },
-  { id:'arab-network', publisher:'الشبكة العربية للأبحاث والنشر', active:true, slogan:'بوابتك نحو عالم المعرفة', kicker:'معرفةٌ عربيةٌ رصينة', description:'كتب الفكر والتاريخ والسياسة التي تمنح السؤال العربي مساحة أوسع.', accent:'#2e579a', surface:'#dbe8ef', ink:'#18243b', mark:'ش' },
-  { id:'rafidain', publisher:'دار الرافدين', active:true, slogan:'من وادي الرافدين بدأت الكتابة والمدنية', kicker:'للكتاب العربي الجميل', description:'إصدارات تحمل حيوية المكتبة العربية، بين التراث والقراءة المعاصرة.', accent:'#20205e', surface:'#e5e1ee', ink:'#171735', mark:'ر' }
-]);
+let featuredBookIds = readStorage('ghazal.featuredBooks.v1', []);
+let publisherFeatures = readStorage('ghazal.publisherFeatures.v1', []);
 let bestSellerBookIds = [];
 let catalogBookGenres = [];
 let authorSpotlight = null;
@@ -96,23 +65,56 @@ window.addEventListener('storage', event => { if (event.key === 'ghazal.customBo
 let discounts = readStorage('ghazal.discounts.v1', []);
 let activeDiscountCode = '';
 function applyCatalogPayload(payload) {
-  if (!payload?.books?.length) return;
-  books = payload.books.map(book => ({ ...book, stock: Number(book.stock ?? book.available ?? 0) }));
+  books = Array.isArray(payload?.books) ? payload.books.map(book => ({ ...book, stock: Number(book.stock ?? book.available ?? 0) })) : [];
   byId = Object.fromEntries(books.map(book => [book.id, book]));
-  publishers = payload.publishers?.length ? [...publishers.filter(local => !payload.publishers.some(remote => remote.name === local.name)), ...payload.publishers] : publishers;
-  genres = payload.genres || genres;
-  catalogBookGenres = payload.bookGenres || catalogBookGenres;
-  discounts = payload.discounts || [];
-  authorProfiles = payload.authorProfiles || authorProfiles;
-  collections = payload.collections?.length ? payload.collections : collections;
-  const storedFeatured = payload.featuredBookIds || [];
-  if (storedFeatured.length) featuredBookIds = storedFeatured;
-  bestSellerBookIds = payload.bestSellerBookIds || [];
-  authorSpotlight = payload.authorSpotlight || null;
-  publisherFeatures = payload.publisherFeatures || publisherFeatures;
+  publishers = payload?.publishers || [];
+  genres = payload?.genres || {};
+  catalogBookGenres = payload?.bookGenres || [];
+  discounts = payload?.discounts || [];
+  authorProfiles = payload?.authorProfiles || {};
+  collections = payload?.collections || [];
+  featuredBookIds = payload?.featuredBookIds || [];
+  bestSellerBookIds = payload?.bestSellerBookIds || [];
+  authorSpotlight = payload?.authorSpotlight || null;
+  publisherFeatures = payload?.publisherFeatures || [];
+  renderCategoryUI(); renderDepartmentLinks(); renderPublisherGrid(); renderHeroArt(); renderBooks();
   renderFeaturedSelections(); renderHomeShelves(); renderFeaturedPublishers();
   if (location.hash === '#catalog') renderCatalogPage();
+  if (location.hash.startsWith('#genre/')) showRoute();
   if (location.hash.startsWith('#collection/')) showRoute();
+}
+function renderHeroArt() {
+  const art = document.getElementById('hero-art'); if (!art) return;
+  const picks = [...new Set([...featuredBookIds, ...books.map(book => book.id)])].map(id => byId[id]).filter(book => book && (book.thumb || book.display || book.image)).slice(0, 3);
+  const slots = [...art.querySelectorAll('.hero-book')];
+  slots.forEach((slot, index) => {
+    const book = picks[index];
+    slot.hidden = !book;
+    slot.innerHTML = book ? `<img class="edition-image hero-cover-image" data-view="${escapeHtml(book.id)}" src="${coverUrl(book, 'display')}" alt="غلاف ${escapeHtml(book.title)}"${index === 2 ? '' : ' loading="lazy"'} decoding="async" />` : '';
+  });
+  const note = art.querySelector('.hero-art-note');
+  if (note) { note.hidden = !picks.length; const counter = note.querySelector('span'); if (counter) counter.textContent = `0${Math.min(picks.length, 3)} / 0${Math.max(picks.length, 3)}`; }
+}
+function renderCategoryUI() {
+  const entries = Object.entries(genres).filter(([, genre]) => genre && genre.title).slice(0, 6);
+  const home = document.getElementById('home-filters');
+  if (home) home.innerHTML = `<button class="filter${activeFilter === 'all' ? ' active' : ''}" data-filter="all">كل الكتب</button>${entries.map(([id, genre]) => `<button class="filter${activeFilter === id ? ' active' : ''}" data-filter="${escapeHtml(id)}">${escapeHtml(genre.title)}</button>`).join('')}`;
+  const catalog = document.getElementById('catalog-filters');
+  if (catalog) catalog.innerHTML = `<button class="${catalogFilter === 'all' ? 'active' : ''}" data-catalog-filter="all">كل الكتب</button>${entries.map(([id, genre]) => `<button class="${catalogFilter === id ? 'active' : ''}" data-catalog-filter="${escapeHtml(id)}">${escapeHtml(genre.title)}</button>`).join('')}`;
+}
+function renderDepartmentLinks() {
+  const target = document.getElementById('department-links'); if (!target) return;
+  const entries = Object.entries(genres).filter(([, genre]) => genre && genre.title);
+  const links = entries.map(([id, genre], index) => `<a href="#genre/${encodeURIComponent(id)}"><span class="dep-num">${String(index + 1).padStart(2, '0')}</span><span>${escapeHtml(genre.title)}<small>${escapeHtml(genre.description || '')}</small></span><b>↖</b></a>`);
+  links.push(`<a href="#bestsellers"><span class="dep-num">${String(entries.length + 1).padStart(2, '0')}</span><span>الأكثر قراءة<small>كتب أحبّها القراء</small></span><b>↖</b></a>`);
+  target.innerHTML = links.join('');
+}
+function renderPublisherGrid() {
+  const section = document.getElementById('publishers'); const target = document.getElementById('home-publisher-grid');
+  if (!section || !target) return;
+  const list = publishers.filter(publisher => publisher && publisher.name).slice(0, 8);
+  section.hidden = !list.length;
+  target.innerHTML = list.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${escapeHtml(publisher.logo || publisher.name.slice(0, 1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('');
 }
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) window.GhazalAPI.catalog().then(applyCatalogPayload).catch(() => {});
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) {
@@ -126,7 +128,7 @@ function priceHtml(book) { const price = discountedPrice(book); return price < N
 const coverPath = value => { const source = String(value || '').trim(); if (!source) return ''; return source.startsWith('data:') || source.startsWith('/') || /^https?:\/\//i.test(source) ? source : `assets/covers/${source}`; };
 // Cards request `thumb`, the book page requests `display`; both fall back to the
 // stored original. Covers are immutable files, so browsers cache them forever.
-const coverUrl = (book, size = 'thumb') => coverPath(size === 'display' ? (book?.display || book?.image) : (book?.thumb || book?.display || book?.image)) || 'assets/covers/meaning.jpg';
+const coverUrl = (book, size = 'thumb') => coverPath(size === 'display' ? (book?.display || book?.image) : (book?.thumb || book?.display || book?.image)) || 'assets/placeholder-cover.svg';
 const money = value => `${new Intl.NumberFormat('ar-DZ-u-nu-latn').format(value)} د.ج`;
 const wilayas = `1|Adrar|1100|500,2|Chlef|800|400,3|Laghouat|800|400,4|Oum El Bouaghi|700|400,5|Batna|650|400,6|Béjaïa|700|400,7|Biskra|650|400,8|Béchar|1050|400,9|Blida|750|400,10|Bouira|750|400,11|Tamanrasset|1050|400,12|Tébessa|650|400,13|Tlemcen|800|400,14|Tiaret|800|400,15|Tizi Ouzou|750|400,16|Alger|600|400,17|Djelfa|800|400,18|Jijel|700|400,19|Sétif|700|400,20|Saïda|800|400,21|Skikda|700|400,22|Sidi Bel Abbès|800|400,23|Annaba|700|400,24|Guelma|700|400,25|Constantine|700|400,26|Médéa|750|400,27|Mostaganem|800|400,28|M'Sila|750|400,29|Mascara|800|400,30|Ouargla|750|400,31|Oran|850|400,32|El Bayadh|1000|500,33|Illizi|1400|700,34|Bordj Bou Arreridj|700|400,35|Boumerdès|750|400,36|El Tarf|700|400,37|Tindouf|1400|700,38|Tissemsilt|850|450,39|El Oued|450|350,40|Khenchela|700|400,41|Souk Ahras|700|400,42|Tipaza|750|400,43|Mila|700|400,44|Aïn Defla|850|450,45|Naâma|950|500,46|Aïn Témouchent|850|450,47|Ghardaïa|850|400,48|Relizane|850|450,49|Timimoun|1050|550,50|Bordj Badji Mokhtar|1800|800,51|Ouled Djellal|650|550,52|Beni Abbes|1050|550,53|In Salah|1350|750,54|In Guezzam|1350|750,55|Touggourt|650|400,56|Djanet|1800|800,57|El M'Ghair|650|500,58|El Meniaa|950|550`.split(',').map(row => {
   const [code, name, home, office] = row.split('|').map((value, index) => index < 2 ? value : Number(value));
@@ -162,39 +164,6 @@ let checkoutStep = 1;
 let checkoutData = null;
 let revealObserver;
 
-// Replace the concept covers in the editorial compositions with published editions.
-const editionMap = { 'cover-stranger': 'stranger', 'cover-world': 'world-yesterday', 'cover-solitude': 'solitude', 'cover-meaning': 'meaning', 'cover-letters': 'letters', 'cover-orientalism': 'orientalism', 'cover-meditations': 'meditations' };
-$$('.cover').forEach(placeholder => {
-  const coverClass = Object.keys(editionMap).find(name => placeholder.classList.contains(name));
-  if (!coverClass || placeholder.closest('#book-grid')) return;
-  const book = byId[editionMap[coverClass]];
-  const image = document.createElement('img');
-  image.src = coverUrl(book, 'display');
-  image.alt = `غلاف الطبعة العربية من كتاب ${book.title}`;
-  image.className = `${placeholder.className} edition-image`;
-  image.loading = placeholder.closest('.hero-art') ? 'eager' : 'lazy';
-  image.decoding = 'async';
-  placeholder.replaceWith(image);
-});
-$$('[data-add]').forEach(button => {
-  const book = books.find(item => item.title === button.dataset.add || (button.dataset.add === 'تأملات' && item.id === 'meditations'));
-  if (book) button.dataset.add = book.id;
-});
-$$('.favorite:not([data-favorite])').forEach(button => {
-  const title = button.closest('.book-card')?.querySelector('h3')?.textContent.trim();
-  const book = books.find(item => item.title === title || (title === 'تأملات' && item.id === 'meditations'));
-  if (book) button.dataset.favorite = book.id;
-});
-$$('.favorite[data-favorite]').forEach(button => {
-  const saved = favorites.includes(button.dataset.favorite);
-  button.setAttribute('aria-pressed', String(saved));
-  button.setAttribute('aria-label', `${saved ? 'أزل من المحفوظات' : 'احفظ'} ${byId[button.dataset.favorite].title}`);
-  button.textContent = saved ? '♥' : '♡';
-});
-$$('.feature-description h3,.selection-info h3,.selection-info p').forEach(element => {
-  if (element.textContent.trim() === 'تأملات') element.textContent = 'التأملات';
-});
-
 function cardTemplate(book, index) {
   const saved = favorites.includes(book.id);
   const available = Number(book.stock) > 0;
@@ -215,7 +184,7 @@ function shelfCardTemplate(book) {
 }
 function renderShelfGrid(targetId, list) {
   const target = document.getElementById(targetId); if (!target) return;
-  const items = list.filter(Boolean);
+  const items = list.filter(Boolean).slice(0, 12);
   target.innerHTML = items.length ? `<div class="shelf-grid">${items.map(shelfCardTemplate).join('')}</div>` : '';
 }
 function shelfStep(viewport) {
@@ -239,7 +208,7 @@ function syncShelfCount(carousel) {
 }
 function renderCarousel(targetId, carouselId, list) {
   const target = document.getElementById(targetId); if (!target) return;
-  const items = list.filter(Boolean);
+  const items = list.filter(Boolean).slice(0, 12);
   if (!items.length) { target.innerHTML = ''; return; }
   target.innerHTML = `<div class="shelf-carousel" data-carousel="${carouselId}"><div class="shelf-carousel-viewport" tabindex="0" role="group" aria-label="رف كتب قابل للتمرير"><div class="shelf-carousel-track">${items.map(shelfCardTemplate).join('')}</div></div><div class="shelf-carousel-controls"><button class="shelf-carousel-arrow" type="button" data-shelf-prev="${carouselId}" aria-label="الكتب السابقة">→</button><span class="shelf-carousel-count" aria-live="polite">1 / ${items.length}</span><button class="shelf-carousel-arrow" type="button" data-shelf-next="${carouselId}" aria-label="الكتب التالية">←</button></div></div>`;
   const carousel = target.querySelector('.shelf-carousel');
@@ -295,6 +264,7 @@ document.addEventListener('click', event => {
   event.stopPropagation();
 }, true);
 function renderBooks() {
+  if (activeFilter !== 'all' && !genres[activeFilter]) activeFilter = 'all';
   const filtered = activeFilter === 'all' ? books : books.filter(book => book.category === activeFilter);
   renderCarousel('book-grid', 'new-arrivals', filtered.slice(0, 12));
 }
@@ -304,7 +274,7 @@ function applyFilter(filter) {
   $$('.filter').forEach(button => button.classList.toggle('active', button.dataset.filter === filter));
   renderBooks();
 }
-$$('.filter').forEach(button => button.addEventListener('click', () => applyFilter(button.dataset.filter)));
+document.addEventListener('click', event => { const button = event.target.closest('.filter[data-filter]'); if (button) applyFilter(button.dataset.filter); });
 $$('[data-select]').forEach(link => link.addEventListener('click', () => applyFilter(link.dataset.select)));
 renderBooks();
 
@@ -424,13 +394,7 @@ function flyBookToCart(button) {
   setTimeout(() => clone.remove(), (duration + .12) * 1000);
 }
 document.addEventListener('click', event => {
-  let view = event.target.closest('[data-view]');
-  if (!view) {
-    const staticBook = event.target.closest('.hero-book,.feature-description h3,.selection-info h3,.selection-item .cover');
-    const staticCover = staticBook?.closest('.selection-item')?.querySelector('.cover') || staticBook;
-    const staticIds = staticBook && (staticBook.classList.contains('hero-book-back') ? 'world-yesterday' : staticBook.classList.contains('hero-book-left') ? 'stranger' : staticBook.classList.contains('hero-book-front') ? 'solitude' : staticCover?.classList.contains('cover-letters') ? 'letters' : staticCover?.classList.contains('cover-orientalism') ? 'orientalism' : staticCover?.classList.contains('cover-meditations') ? 'meditations' : staticBook.matches('.feature-description h3') ? 'meaning' : '');
-    if (staticIds) view = { dataset: { view: staticIds } };
-  }
+  const view = event.target.closest('[data-view]');
   const add = event.target.closest('[data-add]');
   const favorite = event.target.closest('[data-favorite]');
   if (view) {
@@ -654,7 +618,6 @@ const pagesRoot = $('#app-pages');
 const normalizeArabicSearch = value => String(value ?? '').normalize('NFKD').replace(/[\u064B-\u065F\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').toLocaleLowerCase('ar').trim();
 const normalize = normalizeArabicSearch;
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
-const predefinedBookGenres = ['الأدب العربي','الأدب العالمي','الرواية','القصص القصيرة','الشعر','المسرح','الفلسفة','علم النفس','علم الاجتماع','السياسة','التاريخ','السيرة الذاتية','الاقتصاد','العلوم','الفنون','التربية','التنمية الذاتية','الدين والفكر الإسلامي','أدب الأطفال','الرحلات'];
 const genreMatches = (book, selected) => selected === 'all' || normalizeArabicSearch(book.genre).includes(normalizeArabicSearch(selected));
 let catalogFilter = 'all';
 let catalogQuery = '';
@@ -701,7 +664,7 @@ function syncCatalogFilterOptions() {
   const publisherSelect = $('#catalog-publisher-filter'); const genreSelect = $('#catalog-genre-filter');
   if (!publisherSelect || !genreSelect) return;
   const publishersList = [...new Set(books.map(book => String(book.publisher || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
-  const genresList = [...new Set([...predefinedBookGenres, ...catalogBookGenres, ...books.map(book => String(book.genre || '').trim())].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+  const genresList = [...new Set([...catalogBookGenres, ...books.map(book => String(book.genre || '').trim())].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
   publisherSelect.innerHTML = `<option value="all">كل دور النشر</option>${publishersList.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}`;
   genreSelect.innerHTML = `<option value="all">كل الأنواع</option>${genresList.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}`;
   publisherSelect.value = publishersList.includes(catalogPublisher) ? catalogPublisher : 'all';
@@ -710,8 +673,7 @@ function syncCatalogFilterOptions() {
   $('#catalog-price-min').value = catalogPriceMin; $('#catalog-price-max').value = catalogPriceMax;
 }
 function authorBooks(author) { return books.filter(book => book.author === author); }
-const publisherDemoBooks = { 'دار المدى':['world-yesterday','letters','name-of-rose'], 'منشورات الجمل':['stranger','plague','sophies-world'], 'الشبكة العربية للأبحاث والنشر':['orientalism','brief-time','art-of-loving'], 'دار الرافدين':['solitude','meditations','meaning'] };
-function publisherBooks(publisher) { const own = books.filter(book => book.publisher === publisher); if (own.length) return own; return (publisherDemoBooks[publisher] || []).map(id => byId[id]).filter(Boolean).map(book => ({ ...book, publisher })); }
+function publisherBooks(publisher) { return books.filter(book => book.publisher === publisher); }
 function publisherByName(name) { return publishers.find(publisher => publisher.name === name); }
 function renderProfileBooks(list, target) { target.innerHTML = list.length ? list.map(cardTemplate).join('') : '<p class="empty-state">لا توجد كتب مضافة بعد إلى هذا الملف.</p>'; }
 function relatedBooks(book) {
@@ -749,10 +711,11 @@ function renderBookPage(id) {
   observeReveals();
 }
 function renderPublisherPage(name) {
-  const publisher = publisherByName(name) || publishers[0];
+  const publisher = publisherByName(name);
+  if (!publisher) { location.hash = '#publishers'; return; }
   publisherQuery = ''; publisherFilter = 'all'; publisherGenre = 'all';
   const logo = publisher.logo?.startsWith('data:') ? `<img src="${publisher.logo}" alt="شعار ${escapeHtml(publisher.name)}" />` : escapeHtml(publisher.logo || publisher.name.slice(0, 1));
-  const publisherFilters = [{ value:'category:literature', label:'الأدب العالمي' }, { value:'category:thought', label:'الفكر والفلسفة' }, { value:'category:history', label:'التاريخ والإنسانيات' }, ...[...new Set([...predefinedBookGenres, ...catalogBookGenres, ...publisherBooks(publisher.name).map(book => book.genre).filter(Boolean)])].sort((a,b) => a.localeCompare(b, 'ar')).map(genre => ({ value:`genre:${genre}`, label:genre }))];
+  const publisherFilters = [...catalogBookGenres, ...publisherBooks(publisher.name).map(book => book.genre).filter(Boolean)].filter((genre, index, list) => list.indexOf(genre) === index).sort((a,b) => a.localeCompare(b, 'ar')).map(genre => ({ value:`genre:${genre}`, label:genre }));
   $('#publisher-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى الفهرس</a><div class="profile-header"><div class="profile-logo" aria-hidden="true">${logo}</div><div><p class="eyebrow">دار نشر / ملف الناشر</p><h1 class="profile-title" id="publisher-page-title">${escapeHtml(publisher.name)}</h1><p>${escapeHtml(publisher.description)}</p><small>${escapeHtml(publisher.city)} · ${escapeHtml(publisher.since)}</small></div></div><div class="profile-books"><div class="card-heading"><h2>كتب <em>الدار</em></h2><span id="publisher-count" class="catalog-summary"></span></div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="publisher-search" type="search" placeholder="ابحث داخل إصدارات الدار" /></label><select id="publisher-sort" aria-label="ترتيب إصدارات الدار"><option value="featured">الأحدث</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option></select></div><label class="publisher-genre-filter">التصنيف أو النوع<select id="publisher-genre-filter"><option value="all">كل الإصدارات</option>${publisherFilters.map(filter => `<option value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)}</option>`).join('')}</select></label><div class="catalog-grid" id="publisher-books"></div></div>`;
   const update = () => { const [filterType, filterValue] = publisherGenre.split(':'); let list = publisherBooks(publisher.name).filter(book => (publisherGenre === 'all' || (filterType === 'category' ? book.category === filterValue : genreMatches(book, filterValue))) && (!publisherQuery || normalize(`${book.title} ${book.author} ${book.genre}`).includes(normalize(publisherQuery)))); const sort = $('#publisher-sort').value; if (sort === 'title') list.sort((a,b) => a.title.localeCompare(b.title, 'ar')); if (sort === 'price-low') list.sort((a,b) => a.price - b.price); $('#publisher-count').textContent = `${list.length} إصدارات`; renderProfileBooks(list, $('#publisher-books')); $('#publisher-genre-filter').value = publisherGenre; };
   $('#publisher-search').addEventListener('input', event => { publisherQuery = event.target.value; update(); }); $('#publisher-sort').addEventListener('change', update); $('#publisher-genre-filter').addEventListener('change', event => { publisherGenre = event.target.value; update(); }); update();
@@ -765,7 +728,7 @@ function renderAuthorPage(name) {
   renderProfileBooks(list, $('#author-books'));
 }
 function renderGenrePage(category) {
-  const genre = genres[category] || genres.literature;
+  const genre = genres[category] || { title: category || 'التصنيف', description: '' };
   let query = '';
   $('#genre-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="page-hero genre-hero"><div><p class="eyebrow">الغزال / تصفّح حسب التصنيف</p><h1 id="genre-page-title">${escapeHtml(genre.title)}</h1><p>${escapeHtml(genre.description)}</p></div></div><div class="genre-switcher">${Object.entries(genres).map(([id, item]) => `<a class="${id === category ? 'active' : ''}" href="#genre/${id}">${escapeHtml(item.title)}</a>`).join('')}</div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="genre-search" type="search" placeholder="ابحث داخل ${escapeHtml(genre.title)}" /></label></div><div class="catalog-summary"><strong id="genre-count"></strong><span>كتب مختارة من هذا التصنيف</span></div><div class="catalog-grid" id="genre-books"></div>`;
   const update = () => { const result = books.filter(book => book.category === category && (!query || normalize(`${book.title} ${book.author} ${book.publisher}`).includes(normalize(query)))); $('#genre-count').textContent = `${result.length} كتاب`; $('#genre-books').innerHTML = result.map(cardTemplate).join(''); observeReveals(); };
@@ -773,7 +736,7 @@ function renderGenrePage(category) {
 }
 function renderBestsellersPage() {
   const ranked = bestSellerBookIds.map(id => byId[id]).filter(Boolean);
-  const selected = ranked.length ? ranked : books.filter(book => book.category === 'literature').slice(0, 8);
+  const selected = ranked.length ? ranked : books.slice(0, 8);
   $('#bestsellers-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="page-hero genre-hero"><div><p class="eyebrow">الغزال / من رفوف القراء</p><h1 id="bestsellers-page-title">الأكثر <em>قراءةً</em></h1><p>العناوين التي يعود إليها القراء مرة بعد مرة، وتبقى في الحديث بعد الصفحة الأخيرة.</p></div><span class="collection-count">${selected.length} كتب</span></div><div class="catalog-grid">${selected.map(cardTemplate).join('')}</div>`;
   observeReveals();
   trackMeta('ViewContent', { content_type: 'product_group', content_name: 'الأكثر قراءة', content_ids: selected.map(book => book.id) });
@@ -795,7 +758,7 @@ function renderFavoritesPage() {
   observeReveals();
 }
 function renderSelectionsPage() {
-  const selected = [...new Set([...(featuredBookIds || []), 'meaning', 'letters', 'orientalism', 'meditations'])].map(id => byId[id]).filter(Boolean).slice(0, 8);
+  const selected = [...new Set([...(featuredBookIds || []), ...books.map(book => book.id)])].map(id => byId[id]).filter(Boolean).slice(0, 12);
   const spotlight = authorSpotlight ? `<article class="author-spotlight"><div class="author-spotlight-art">${authorSpotlight.photo ? `<img src="${authorSpotlight.photo.startsWith('data:') ? authorSpotlight.photo : escapeHtml(authorSpotlight.photo)}" alt="صورة ${escapeHtml(authorSpotlight.name)}" loading="lazy" />` : `<span>${escapeHtml(authorSpotlight.name).slice(0,1)}</span>`}</div><div class="author-spotlight-copy"><p class="eyebrow">إضاءة على مؤلف</p><h2>صوت <em>${escapeHtml(authorSpotlight.name)}</em></h2><p>${escapeHtml(authorSpotlight.bio || '')}</p><a class="underlined-link" href="#author/${encodeURIComponent(authorSpotlight.name)}">اكتشف ملف المؤلف ↖</a></div></article>` : '';
   $('#selections-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / اختيارات المحرر</p><h1 id="selections-page-title">مختارات <em>الغزال</em></h1><p>اختيارات قابلة للتصفح والشراء، تتجدد من الفهرس الحقيقي للمكتبة.</p></div></div>${spotlight}<div class="catalog-grid">${selected.map(cardTemplate).join('')}</div>`;
   observeReveals();
@@ -805,7 +768,7 @@ function renderNewPage() {
   observeReveals();
 }
 function renderDepartmentsPage() {
-  const bestsellerIds = bestSellerBookIds.length ? bestSellerBookIds : ['solitude', 'letters', 'meditations'];
+  const bestsellerIds = bestSellerBookIds.length ? bestSellerBookIds : books.map(book => book.id).slice(0, 8);
   $('#departments-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / تصفّح هادئ</p><h1 id="departments-page-title">الأقسام <em>والأبواب</em></h1><p>اختر مسارًا واضحًا إلى الكتب التي تناسب فضولك.</p></div></div><div class="department-links page-department-links">${Object.entries(genres).map(([id, genre], index) => `<a href="#genre/${encodeURIComponent(id)}"><span class="dep-num">${String(index + 1).padStart(2, '0')}</span><span>${escapeHtml(genre.title)}<small>${escapeHtml(genre.description)}</small></span><b>↖</b></a>`).join('')}</div><div class="section-heading compact page-subheading"><div><p class="eyebrow">من رفوف القراء</p><h2>الأكثر <em>قراءةً</em></h2></div></div><div class="catalog-grid">${bestsellerIds.map(id => byId[id]).filter(Boolean).slice(0, 8).map(cardTemplate).join('')}</div>`;
   observeReveals();
 }
@@ -864,7 +827,8 @@ function openAdminForm(kind) {
   if (!$('#admin-overlay')) { document.body.insertAdjacentHTML('beforeend', `<div class="overlay admin-overlay" id="admin-overlay" hidden><div class="form-panel" role="dialog" aria-modal="true"><button class="close-button" data-close="admin-overlay" aria-label="إغلاق">×</button><p class="eyebrow">الغزال / إضافة إلى الفهرس</p><h2 id="admin-form-title"></h2><form class="admin-form" id="admin-form"></form></div></div>`); $('#admin-overlay').addEventListener('click', event => { if (event.target === event.currentTarget) hideOverlay('admin-overlay'); }); $('#admin-overlay [data-close]').addEventListener('click', () => hideOverlay('admin-overlay')); }
   const title = kind === 'book' ? 'إضافة كتاب جديد' : 'إضافة دار نشر';
   $('#admin-form-title').textContent = title;
-  $('#admin-form').innerHTML = kind === 'book' ? `<div class="form-grid"><label>عنوان الكتاب<input name="title" required /></label><label>المؤلف<input name="author" required /></label></div><div class="form-grid"><label>دار النشر<input name="publisher" required /></label><label>السعر بالدينار<input name="price" type="number" min="0" required /></label></div><div class="form-grid"><label>التصنيف<select name="category"><option value="literature">الأدب العالمي</option><option value="thought">الفكر والفلسفة</option><option value="history">التاريخ والإنسانيات</option></select></label><label>النوع<input name="genre" placeholder="رواية مترجمة" required /></label></div><label>نبذة<textarea name="note" rows="3" required></textarea></label><label class="bulk-drop">غلاف الكتاب (اختياري)<input name="cover" type="file" accept="image/*" /></label><div class="form-help">لإضافة مجموعة كتب دفعة واحدة، اختر ملف CSV من زر الاستيراد في الأسفل. الأعمدة: العنوان، المؤلف، الناشر، السعر، التصنيف، النوع، النبذة.</div><button class="button button-dark" type="submit">حفظ الكتاب <span>↖</span></button><button class="text-button" type="button" id="bulk-import">＋ استيراد ملف CSV</button><input id="bulk-file" type="file" accept=".csv,text/csv" hidden />` : `<div class="form-grid"><label>اسم دار النشر<input name="name" required /></label><label>المدينة<input name="city" required /></label></div><label>وصف مختصر<textarea name="description" rows="3" required></textarea></label><button class="button button-dark" type="submit">حفظ دار النشر <span>↖</span></button>`;
+  const categoryOptions = Object.keys(genres).length ? Object.keys(genres).map(id => `<option value="${escapeHtml(id)}">${escapeHtml(genres[id].title || id)}</option>`).join('') : '<option value="غير مصنف">غير مصنف</option>';
+  $('#admin-form').innerHTML = kind === 'book' ? `<div class="form-grid"><label>عنوان الكتاب<input name="title" required /></label><label>المؤلف<input name="author" required /></label></div><div class="form-grid"><label>دار النشر<input name="publisher" required /></label><label>السعر بالدينار<input name="price" type="number" min="0" required /></label></div><div class="form-grid"><label>التصنيف<select name="category">${categoryOptions}</select></label><label>النوع<input name="genre" placeholder="رواية مترجمة" required /></label></div><label>نبذة<textarea name="note" rows="3" required></textarea></label><label class="bulk-drop">غلاف الكتاب (اختياري)<input name="cover" type="file" accept="image/*" /></label><div class="form-help">لإضافة مجموعة كتب دفعة واحدة، اختر ملف CSV من زر الاستيراد في الأسفل. الأعمدة: العنوان، المؤلف، الناشر، السعر، التصنيف، النوع، النبذة.</div><button class="button button-dark" type="submit">حفظ الكتاب <span>↖</span></button><button class="text-button" type="button" id="bulk-import">＋ استيراد ملف CSV</button><input id="bulk-file" type="file" accept=".csv,text/csv" hidden />` : `<div class="form-grid"><label>اسم دار النشر<input name="name" required /></label><label>المدينة<input name="city" required /></label></div><label>وصف مختصر<textarea name="description" rows="3" required></textarea></label><button class="button button-dark" type="submit">حفظ دار النشر <span>↖</span></button>`;
   showOverlay('admin-overlay');
   $('#admin-form').dataset.kind = kind;
   $('#admin-form').onsubmit = event => { event.preventDefault(); saveAdminForm(kind, new FormData(event.currentTarget)); };
@@ -872,15 +836,16 @@ function openAdminForm(kind) {
 }
 async function saveAdminForm(kind, data) {
   if (kind === 'publisher') { const name = data.get('name'); const publisher = { id: `publisher-${Date.now()}`, name, city: data.get('city'), since: 'إضافة جديدة', description: data.get('description'), logo: name.slice(0, 1) }; publishers.push(publisher); saveStorage('ghazal.customPublishers.v1', [...readStorage('ghazal.customPublishers.v1', []), publisher]); toast(`أضيفت «${name}» إلى دور النشر`); }
-  else { const title = data.get('title'); const id = `book-${Date.now()}`; const book = { id, title, author: data.get('author'), publisher: data.get('publisher'), category: data.get('category'), genre: data.get('genre'), price: Number(data.get('price')), note: data.get('note'), image: 'meaning.jpg' }; books.push(book); byId[id] = book; const custom = readStorage('ghazal.customBooks.v1', []); saveStorage('ghazal.customBooks.v1', [...custom, book]); toast(`أضيف «${title}» إلى الفهرس`); }
+  else { const title = data.get('title'); const id = `book-${Date.now()}`; const book = { id, title, author: data.get('author'), publisher: data.get('publisher'), category: data.get('category'), genre: data.get('genre'), price: Number(data.get('price')), note: data.get('note'), image: '' }; books.push(book); byId[id] = book; const custom = readStorage('ghazal.customBooks.v1', []); saveStorage('ghazal.customBooks.v1', [...custom, book]); toast(`أضيف «${title}» إلى الفهرس`); }
   hideOverlay('admin-overlay'); renderDashboard(); if (location.hash === '#catalog') renderCatalogPage();
 }
 function importCsv(file) {
   if (!file) return;
-  const reader = new FileReader(); reader.onload = event => { const rows = String(event.target.result).split(/\r?\n/).filter(Boolean).slice(1); const added = []; rows.forEach((row, index) => { const values = row.split(',').map(value => value.trim()); if (values.length < 4) return; const book = { id: `book-${Date.now()}-${index}`, title: values[0], author: values[1], publisher: values[2], price: Number(values[3]) || 0, category: values[4] || 'literature', genre: values[5] || 'كتاب', note: values[6] || 'كتاب جديد على رفوف الغزال.', image: 'meaning.jpg' }; books.push(book); byId[book.id] = book; added.push(book); }); const current = readStorage('ghazal.customBooks.v1', []); saveStorage('ghazal.customBooks.v1', [...current, ...added]); hideOverlay('admin-overlay'); renderDashboard(); if (location.hash === '#catalog') renderCatalogPage(); toast(added.length ? `أضيفت ${added.length} كتب إلى الفهرس` : 'تعذّر العثور على صفوف صالحة في الملف'); }; reader.readAsText(file); }
+  const reader = new FileReader(); reader.onload = event => { const rows = String(event.target.result).split(/\r?\n/).filter(Boolean).slice(1); const added = []; rows.forEach((row, index) => { const values = row.split(',').map(value => value.trim()); if (values.length < 4) return; const book = { id: `book-${Date.now()}-${index}`, title: values[0], author: values[1], publisher: values[2], price: Number(values[3]) || 0, category: values[4] || 'غير مصنف', genre: values[5] || 'عام', note: values[6] || 'كتاب جديد على رفوف الغزال.', image: '' }; books.push(book); byId[book.id] = book; added.push(book); }); const current = readStorage('ghazal.customBooks.v1', []); saveStorage('ghazal.customBooks.v1', [...current, ...added]); hideOverlay('admin-overlay'); renderDashboard(); if (location.hash === '#catalog') renderCatalogPage(); toast(added.length ? `أضيفت ${added.length} كتب إلى الفهرس` : 'تعذّر العثور على صفوف صالحة في الملف'); }; reader.readAsText(file); }
 function renderFeaturedSelections() {
   const target = $('.featured-layout'); if (!target) return;
-  const defaults = ['meaning', 'letters', 'orientalism', 'meditations']; const stored = featuredBookIds || defaults; const selected = [...stored, ...defaults, ...books.map(book => book.id)].filter((id, index, ids) => ids.indexOf(id) === index).map(id => byId[id]).filter(Boolean).slice(0, 4); if (!selected.length) return;
+  const selected = [...new Set([...(featuredBookIds || []), ...books.map(book => book.id)])].map(id => byId[id]).filter(Boolean).slice(0, 4);
+  if (!selected.length) { target.innerHTML = ''; return; }
   const numerals = ['٠١', '٠٢', '٠٣']; const lead = selected[0]; const rest = selected.slice(1);
   target.innerHTML = `<article class="feature-story"><div class="feature-book-stage"><button class="feature-selection-cover" data-view="${escapeHtml(lead.id)}" aria-label="افتح تفاصيل ${escapeHtml(lead.title)}"><img class="selection-cover-image" src="${coverUrl(lead, 'display')}" alt="غلاف ${escapeHtml(lead.title)}" /></button><span class="stage-index">G / 01</span></div><div class="feature-description"><div><span class="category-label">${escapeHtml(lead.genre || 'مختارات الغزال')}</span><h3 data-view="${escapeHtml(lead.id)}" tabindex="0">${escapeHtml(lead.title)}</h3><p>${escapeHtml(lead.review || lead.note || 'كتاب مختار من رفوف الغزال.')}</p></div>${Number(lead.stock) > 0 ? `<button class="round-add" data-add="${escapeHtml(lead.id)}" aria-label="أضف ${escapeHtml(lead.title)} إلى السلة">↖</button>` : ''}</div></article><div class="selection-list">${rest.map((book, index) => `<article class="selection-item"><span class="item-number">${numerals[index] || index + 1}</span><button class="selection-cover-button" data-view="${escapeHtml(book.id)}" aria-label="افتح تفاصيل ${escapeHtml(book.title)}"><img class="selection-cover-image" src="${coverUrl(book)}" alt="غلاف ${escapeHtml(book.title)}" /></button><div class="selection-info"><span class="category-label">${escapeHtml(book.genre || '')}</span><h3 data-view="${escapeHtml(book.id)}" tabindex="0">${escapeHtml(book.title)}</h3><p>${escapeHtml(book.review || book.note || 'كتاب مختار من رفوف الغزال.')}</p><a class="item-link" href="#book/${encodeURIComponent(book.id)}">عرض الكتاب <span aria-hidden="true">↖</span></a></div></article>`).join('')}</div>`;
   observeReveals();
@@ -891,17 +856,19 @@ function renderHomeShelves() {
     if (!anchor?.parentNode) return;
     anchor.insertAdjacentHTML('beforebegin', `<section class="home-book-shelves section-pad wrap" id="home-book-shelves"><div class="home-shelf-block home-bestseller-shelf"><div class="home-shelf-heading"><div><h3>الأكثر قراءة الآن</h3><p>عناوين تعود إليها الأيدي مرة بعد مرة.</p></div><a class="underlined-link" href="#catalog">كل الكتب ↖</a></div><div id="home-bestseller-grid"></div></div><div id="home-author-spotlight"></div><div id="home-collection-shelves"></div><div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>قراءة جميلة بسعر هادئ</h3><p>أفضل ما تجده بـ ٢٠٠٠ د.ج أو أقل.</p></div><a class="underlined-link" href="#catalog">تصفح حسب السعر ↖</a></div><div id="home-value-grid"></div></div></section>`);
   }
-  const featuredIds = new Set(featuredBookIds || ['meaning', 'letters', 'orientalism', 'meditations']);
+  const featuredIds = new Set(featuredBookIds || []);
   const homepageCollections = collections.filter(collection => collection.active && collection.homepage).slice(0, 4);
   const fallback = { id: 'collection-recommended', slug: 'recommended', title: 'اختيارات أخرى', description: 'عناوين تستحق أن تجد طريقها إلى رفّك.', bookIds: books.filter(book => !featuredIds.has(book.id)).map(book => book.id) };
   const recommended = books.filter(book => !featuredIds.has(book.id)).slice(0, 8);
   const shelves = homepageCollections.length ? homepageCollections : [fallback];
   const spotlightBooks = authorSpotlight ? authorSpotlight.bookIds.map(id => byId[id]).filter(Boolean) : [];
   $('#home-author-spotlight').innerHTML = authorSpotlight ? `<article class="author-spotlight"><div class="author-spotlight-art">${authorSpotlight.photo ? `<img src="${authorSpotlight.photo.startsWith('data:') ? authorSpotlight.photo : escapeHtml(authorSpotlight.photo)}" alt="${escapeHtml(authorSpotlight.name)}" loading="lazy" />` : `<span>${escapeHtml(authorSpotlight.name).slice(0,1)}</span>`}</div><div class="author-spotlight-copy"><p class="eyebrow">من رفوف الغزال</p><h2>صوت <em>${escapeHtml(authorSpotlight.name)}</em></h2><p>${escapeHtml(authorSpotlight.bio)}</p><a class="underlined-link" href="#author/${encodeURIComponent(authorSpotlight.name)}">اكتشف كتبه (${spotlightBooks.length}) ↖</a></div><div class="author-spotlight-books">${spotlightBooks.slice(0,3).map(cardTemplate).join('')}</div></article>` : '';
-  $('#home-collection-shelves').innerHTML = shelves.map((collection, index) => `<div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>${escapeHtml(collection.title)}</h3><p>${escapeHtml(collection.description || '')}</p></div><a class="underlined-link" href="#collection/${encodeURIComponent(collection.slug)}">عرض المجموعة ↖</a></div><div id="home-collection-grid-${index}"></div></div>`).join('');
+  $('#home-collection-shelves').innerHTML = shelves.map((collection, index) => { const href = collection.id === 'collection-recommended' ? '#catalog' : `#collection/${encodeURIComponent(collection.slug)}`; return `<div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>${escapeHtml(collection.title)}</h3><p>${escapeHtml(collection.description || '')}</p></div><a class="underlined-link" href="${href}">عرض الكل ↖</a></div><div id="home-collection-grid-${index}"></div></div>`; }).join('');
   shelves.forEach((collection, index) => renderCarousel(`home-collection-grid-${index}`, `collection-${index}`, collection.bookIds.map(id => byId[id]).filter(Boolean).slice(0, 8)));
   const bestsellers = bestSellerBookIds.map(id => byId[id]).filter(Boolean);
   renderShelfGrid('home-bestseller-grid', bestsellers.length ? bestsellers : recommended);
+  document.querySelector('.home-bestseller-shelf')?.toggleAttribute('hidden', !(bestsellers.length || recommended.length));
+  $('#home-collection-shelves').hidden = !shelves.length;
   const bestsellerRank = new Map(bestSellerBookIds.map((id, index) => [String(id), index]));
   const valueBooks = books.filter(book => Number(book.price) <= 2000).sort((a, b) => {
     const aRank = bestsellerRank.get(String(a.id)) ?? Number.MAX_SAFE_INTEGER;
@@ -917,13 +884,9 @@ function renderFeaturedPublishers() {
   const target = document.getElementById('publisher-featured'); if (!target) return;
   const active = (publisherFeatures || []).filter(item => item.active !== false).map(item => ({ ...item, books: books.filter(book => book.publisher === item.publisher) }));
   target.hidden = !active.length;
-  const publisherLogos = {'دار المدى':'assets/publishers/al-mada.png','منشورات الجمل':'assets/publishers/al-jamal.png','الشبكة العربية للأبحاث والنشر':'assets/publishers/arab-network.png','دار الرافدين':'assets/publishers/al-rafidain.png'};
-  target.innerHTML = active.map(item => `<article class="publisher-feature publisher-feature--${escapeHtml(item.id)}" style="--publisher-accent:${escapeHtml(item.accent || '#8f5e3b')};--publisher-surface:${escapeHtml(item.surface || '#eee2ce')};--publisher-ink:${escapeHtml(item.ink || '#1b1915')}"><div class="publisher-feature-visual" id="publisher-shelf-${escapeHtml(item.id)}"></div><div class="publisher-feature-copy"><div class="publisher-feature-logo"><img src="${item.logo || publisherLogos[item.publisher] || ''}" alt="شعار ${escapeHtml(item.publisher)}" /></div><p class="publisher-feature-kicker">${escapeHtml(item.slogan || item.kicker || 'دار نشر مميزة')}</p><h2>${escapeHtml(item.publisher)}</h2><p class="publisher-feature-description">${escapeHtml(item.description || '')}</p><a class="publisher-feature-link" href="#publisher/${encodeURIComponent(item.publisher)}">كل إصدارات الدار <span>←</span></a></div></article>`).join('');
+  target.innerHTML = active.map(item => `<article class="publisher-feature publisher-feature--${escapeHtml(item.id)}" style="--publisher-accent:${escapeHtml(item.accent || '#8f5e3b')};--publisher-surface:${escapeHtml(item.surface || '#eee2ce')};--publisher-ink:${escapeHtml(item.ink || '#1b1915')}"><div class="publisher-feature-visual" id="publisher-shelf-${escapeHtml(item.id)}"></div><div class="publisher-feature-copy">${item.logo ? `<div class="publisher-feature-logo"><img src="${escapeHtml(item.logo)}" alt="شعار ${escapeHtml(item.publisher)}" /></div>` : ''}<p class="publisher-feature-kicker">${escapeHtml(item.slogan || item.kicker || 'دار نشر مميزة')}</p><h2>${escapeHtml(item.publisher)}</h2><p class="publisher-feature-description">${escapeHtml(item.description || '')}</p><a class="publisher-feature-link" href="#publisher/${encodeURIComponent(item.publisher)}">كل إصدارات الدار <span>←</span></a></div></article>`).join('');
   active.forEach(item => {
-    const demo = (publisherDemoBooks[item.publisher] || []).map(id => byId[id]).filter(Boolean).map(book => ({ ...book, publisher: item.publisher }));
-    const seed = [...item.books, ...demo.filter(book => !item.books.some(existing => existing.id === book.id))];
-    const extras = books.filter(book => !seed.some(existing => existing.id === book.id)).slice(0, 9).map(book => ({ ...book, publisher: item.publisher }));
-    renderCarousel(`publisher-shelf-${item.id}`, `publisher-${item.id}`, [...seed, ...extras]);
+    renderCarousel(`publisher-shelf-${item.id}`, `publisher-${item.id}`, item.books);
   });
 }
 document.addEventListener('click', event => { const trigger = event.target.closest('[data-open-admin]'); if (trigger) openAdminForm(trigger.dataset.openAdmin); });

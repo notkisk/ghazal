@@ -2,7 +2,7 @@
 
 An Arabic-first bookstore with a static preview and a dependency-free Node/SQLite backend. For the production flow, set `GHAZAL_ADMIN_PASSWORD` (and optionally `GHAZAL_ADMIN_EMAIL`) then run `npm start`; the server serves the storefront and persists orders/inventory in `.data/ghazal.sqlite`.
 
-The catalog has twelve books with real Arabic-edition cover images. Cover source listings are documented in [`assets/covers/SOURCES.md`](assets/covers/SOURCES.md). The production catalog, publishers, genres, discounts, author profiles, featured ordering, and collections are stored in SQLite; browser storage is only an offline-preview fallback.
+The catalog starts empty: books, publishers, authors, categories, and subcategories are created from the XLSX files you import in `/admin.html`. The server derives publishers, authors, and both category levels from the imported books, so the spreadsheet is the single source of truth. Cover files are content-addressed under `GHAZAL_COVERS_DIR` (see below) and never embedded in the catalog payload. The production catalog, discounts, author profiles, featured ordering, and collections are stored in SQLite; browser storage is only an offline-preview fallback.
 
 On a fresh database, open `/admin.html` and choose “إنشاء حساب المالك لأول مرة”. The first account becomes the owner and signup closes immediately after creation. Use a password of at least 12 characters. For scripted deployments, set `GHAZAL_ADMIN_PASSWORD` and optionally `GHAZAL_ADMIN_EMAIL` before starting the server; this also creates the owner account and disables first-run signup.
 
@@ -16,7 +16,7 @@ The Ecotrack exporter preserves the supplied workbook template and validates the
 
 ### Backups and monitoring
 
-Create a point-in-time backup with `npm run backup`. Each run writes a timestamped folder under `.data/backups` containing `ghazal.sqlite` and a `covers/` copy; set `GHAZAL_BACKUP_DIR` to store backups elsewhere and schedule this command with cron or your hosting provider. Covers live outside SQLite (see `GHAZAL_COVERS_DIR`), so restoring only the database loses every cover. The public health check is `GET /api/health`; owners can inspect integration and error diagnostics from `GET /api/admin/diagnostics`.
+Create a point-in-time backup with `npm run backup`. Each run writes a timestamped folder under `.data/backups` containing `ghazal.sqlite` and a `covers/` copy; set `GHAZAL_BACKUP_DIR` to store backups elsewhere and schedule this command with cron or your hosting provider. The script copies files directly and never opens the database, so it cannot trigger migrations or a catalog reset. Covers live outside SQLite (see `GHAZAL_COVERS_DIR`), so restoring only the database loses every cover. The public health check is `GET /api/health`; owners can inspect integration and error diagnostics from `GET /api/admin/diagnostics`.
 
 ### Production deployment
 

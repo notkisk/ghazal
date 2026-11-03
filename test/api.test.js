@@ -11,6 +11,28 @@ process.env.GHAZAL_DATA_DIR = dataDir;
 process.env.GHAZAL_ADMIN_PASSWORD = 'secret';
 const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, COVERS_DIR } = require('../server');
 
+// The production catalog now starts empty and is rebuilt from spreadsheets, so
+// the test suite seeds its own deterministic fixtures after the server boots.
+const fixtureBooks = [
+  ['stranger','الغريب','ألبير كامو','منشورات الجمل','literature','رواية مترجمة',1900],
+  ['world-yesterday','عالم الأمس','شتيفان تسفايغ','دار المدى','history','سيرة · تاريخ',2600],
+  ['meaning','الإنسان يبحث عن معنى','فيكتور فرانكل','آكيول','thought','فكر · علم نفس',2200],
+  ['orientalism','الاستشراق','إدوارد سعيد','دار الآداب','history','فكر · نقد ثقافي',3900],
+  ['meditations','التأملات','ماركوس أوريليوس','طبعة عربية','thought','فلسفة · كلاسيكيات',2100],
+  ['solitude','مئة عام من العزلة','غابرييل غارسيا ماركيز','دار التنوير','literature','رواية مترجمة',3200],
+  ['letters','رسائل إلى شاعر شاب','راينر ماريا ريلكه','دار الكرمة','literature','أدب · رسائل',1500],
+  ['sophies-world','عالم صوفي','جوستاين غاردر','دار المنى','thought','رواية · فلسفة',3600],
+  ['plague','الطاعون','ألبير كامو','دار التنوير','literature','رواية مترجمة',2400],
+  ['name-of-rose','اسم الوردة','أمبرتو إيكو','دار الكتاب الجديد','literature','رواية · تاريخ',3200],
+  ['art-of-loving','فن الحب','إريك فروم','طبعة عربية','thought','فكر · إنسانيات',1800],
+  ['brief-time','تاريخ موجز للزمان','ستيفن هوكينغ','دار التنوير','history','علم · إنسانيات',2900]
+];
+{
+  const stamp = new Date().toISOString();
+  const insert = db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,image,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+  for (const book of fixtureBooks) insert.run(...book, 10, '', 'كتاب اختبار.', stamp, stamp);
+}
+
 const PNG_BYTES = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const PNG_DATA_URL = `data:image/png;base64,${PNG_BYTES.toString('base64')}`;
 async function listen() { await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); return `http://127.0.0.1:${server.address().port}`; }
@@ -24,7 +46,7 @@ test.after(() => fs.rmSync(dataDir, { recursive:true, force:true }));
 
 test('catalog is seeded and orders reserve stock transactionally', () => {
   assert.equal(db.prepare('SELECT COUNT(*) n FROM books').get().n, 12);
-  assert.deepEqual(catalogPayload().bookGenres, ['أدب · رسائل','أدب الأطفال','الأدب العالمي','الأدب العربي','الاقتصاد','التاريخ','التربية','التنمية الذاتية','الدين والفكر الإسلامي','الرحلات','الرواية','السياسة','السيرة الذاتية','الشعر','العلوم','الفلسفة','الفنون','القصص القصيرة','المسرح','رواية · تاريخ','رواية · فلسفة','رواية مترجمة','سيرة · تاريخ','علم · إنسانيات','علم الاجتماع','علم النفس','فكر · إنسانيات','فكر · علم نفس','فكر · نقد ثقافي','فلسفة · كلاسيكيات']);
+  assert.deepEqual(catalogPayload().bookGenres, [...new Set(fixtureBooks.map(book => book[5]))].sort((a, b) => a.localeCompare(b, 'ar')));
   const reference = createOrder({ customer:{customer:'اختبار الغزال',phone:'0555555555'}, items:[{id:'stranger',qty:2}], shipping:{type:'home',wilayaCode:16,wilaya:'Alger',commune:'Alger Centre',price:600} });
   assert.match(reference, /^GZ-/);
   const book = db.prepare('SELECT stock,reserved,stock-reserved available FROM books WHERE id=?').get('stranger');
@@ -243,6 +265,24 @@ test('catalog sync stores cover paths without embedded image data', async () => 
     assert.equal(kept.display, stored.image);
   } finally {
     db.prepare('DELETE FROM books WHERE id=?').run(id);
+    await closeServer();
+  }
+});
+
+test('catalog sync derives publishers, authors, categories, and subcategories from books', async () => {
+  const base = await listen();
+  const book = { id:'derived-test', title:'كتاب مشتق', author:'مؤلف جديد', publisher:'ناشر جديد', price:1000, stock:2, category:'تصنيف جديد', genre:'نوع جديد', image:'' };
+  try {
+    const authorization = `Bearer ${await ownerToken(base)}`;
+    const response = await fetch(`${base}/api/admin/catalog`, { method:'PUT', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ books:[book] }) });
+    assert.equal(response.status, 200);
+    assert.ok(db.prepare('SELECT 1 FROM publishers WHERE name=?').get('ناشر جديد'));
+    assert.ok(db.prepare('SELECT 1 FROM authors WHERE name=?').get('مؤلف جديد'));
+    const payload = catalogPayload();
+    assert.equal(payload.genres['تصنيف جديد'].title, 'تصنيف جديد');
+    assert.ok(payload.bookGenres.includes('نوع جديد'));
+  } finally {
+    db.prepare('DELETE FROM books WHERE id=?').run('derived-test');
     await closeServer();
   }
 });

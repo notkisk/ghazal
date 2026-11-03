@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900" role="img" aria-label="غلاف كتاب">
+  <rect width="600" height="900" fill="#e7d8bd"/>
+  <rect x="34" y="34" width="532" height="832" fill="none" stroke="#8f5e3b" stroke-width="2"/>
+  <text x="300" y="430" text-anchor="middle" font-family="serif" font-size="64" fill="#8f5e3b">الغزال</text>
+  <text x="300" y="500" text-anchor="middle" font-family="serif" font-size="30" fill="#6f6658">للكتب</text>
+</svg>

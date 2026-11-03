@@ -14,6 +14,16 @@ function enhanceOwnerSelect(select) {
 }
 new MutationObserver(() => $$('select').forEach(enhanceOwnerSelect)).observe(document.body, { childList: true, subtree: true });
 const ADMIN_SESSION_KEY = 'ghazal.adminToken';
+const CATALOG_CACHE_VERSION = '2026-11-clean-slate';
+// Drop catalog caches written by earlier demo/import versions. This runs once
+// per browser and never touches cart/favorites or the Meta pixel setting.
+try {
+  const keep = new Set(['ghazal.cacheVersion','ghazal.metaPixelId','ghazal.cart.v2','ghazal.favorites.v2']);
+  if (localStorage.getItem('ghazal.cacheVersion') !== CATALOG_CACHE_VERSION) {
+    Object.keys(localStorage).filter(key => key.startsWith('ghazal.') && !keep.has(key)).forEach(key => localStorage.removeItem(key));
+    localStorage.setItem('ghazal.cacheVersion', CATALOG_CACHE_VERSION);
+  }
+} catch { /* Storage is optional. */ }
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
 let catalogSyncTimer;
 function catalogPayloadForSync() { return { books, publishers, genres, bookGenres, discounts, featured: featuredBookIds, authorProfiles, publisherFeatures }; }
@@ -27,37 +37,16 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&am
 // Cover paths are stored as short URLs (/covers/<hash>.jpg); legacy rows keep
 // bare filenames under assets/covers and old data URLs still render.
 const coverPath = value => { const source = String(value || '').trim(); if (!source) return ''; return source.startsWith('data:') || source.startsWith('/') || /^https?:\/\//i.test(source) ? source : `assets/covers/${source}`; };
-const bookCover = (book, size = 'thumb') => coverPath(size === 'thumb' ? (book?.thumb || book?.display || book?.image) : (book?.display || book?.image)) || 'assets/covers/meaning.jpg';
-const baseBooks = [
-  ['stranger','الغريب','ألبير كامو','منشورات الجمل',1900],['world-yesterday','عالم الأمس','شتيفان تسفايغ','دار المدى',2600],['meaning','الإنسان يبحث عن معنى','فيكتور فرانكل','آكيول',2200],['orientalism','الاستشراق','إدوارد سعيد','دار الآداب',3900],['meditations','التأملات','ماركوس أوريليوس','طبعة عربية',2100],['solitude','مئة عام من العزلة','غابرييل غارسيا ماركيز','دار التنوير',3200],['letters','رسائل إلى شاعر شاب','راينر ماريا ريلكه','دار الكرمة',1500],['sophies-world','عالم صوفي','جوستاين غاردر','دار المنى',3600],['plague','الطاعون','ألبير كامو','دار التنوير',2400],['name-of-rose','اسم الوردة','أمبرتو إيكو','دار الكتاب الجديد',3200],['art-of-loving','فن الحب','إريك فروم','طبعة عربية',1800],['brief-time','تاريخ موجز للزمان','ستيفن هوكينغ','دار التنوير',2900]
-].map(([id,title,author,publisher,price]) => ({id,title,author,publisher,price}));
-const customBooks = read('ghazal.customBooks.v1', []);
-const bookOverrides = new Map(customBooks.map(book => [book.id, book]));
-let books = baseBooks.map(book => ({ ...book, ...(bookOverrides.get(book.id) || {}) }));
-customBooks.filter(book => !books.some(existing => existing.id === book.id)).forEach(book => books.push(book));
-const defaultCovers = { stranger:'stranger.jpg', 'world-yesterday':'world-yesterday.jpg', meaning:'meaning.jpg', orientalism:'orientalism.jpg', meditations:'meditations.jpg', solitude:'solitude.jpg', letters:'letters.jpg', 'sophies-world':'sophies-world.jpg', plague:'plague.jpg', 'name-of-rose':'name-of-rose.jpg', 'art-of-loving':'art-of-loving.jpg', 'brief-time':'brief-time.jpg' };
-books.forEach(book => { if (!book.image) book.image = defaultCovers[book.id] || 'meaning.jpg'; });
-books.forEach(book => { if (!Number.isFinite(Number(book.stock))) book.stock = 10; });
-const defaultFeaturedBooks = ['meaning', 'letters', 'orientalism', 'meditations'];
-let featuredBookIds = read('ghazal.featuredBooks.v1', defaultFeaturedBooks);
-let publisherFeatures = read('ghazal.publisherFeatures.v1', [
-  { id:'mada', publisher:'دار المدى', active:true, layoutVersion:3, slogan:'بيت الثقافة والإبداع', kicker:'أدبٌ وفكرٌ وفنون', description:'رفّ من الكتب التي تصنع ذائقة، وتترك أثرًا أبعد من الصفحة الأخيرة.', accent:'#e51c2a', surface:'#f4d8c8', ink:'#251b19', mark:'م' },
-  { id:'jamal', publisher:'منشورات الجمل', active:true, slogan:'أصواتٌ من العالم', kicker:'أصواتٌ لا تشبه سواها', description:'دار عريقة في الترجمة الأدبية والفلسفية، وكتب تمنح القارئ فرصة الإصغاء إلى أصوات مختلفة.', accent:'#bd1d2d', surface:'#e9d8b9', ink:'#271914', mark:'ج' },
-  { id:'arab-network', publisher:'الشبكة العربية للأبحاث والنشر', active:true, slogan:'بوابتك نحو عالم المعرفة', kicker:'معرفةٌ عربيةٌ رصينة', description:'كتب الفكر والتاريخ والسياسة التي تمنح السؤال العربي مساحة أوسع.', accent:'#2e579a', surface:'#dbe8ef', ink:'#18243b', mark:'ش' },
-  { id:'rafidain', publisher:'دار الرافدين', active:true, slogan:'من وادي الرافدين بدأت الكتابة والمدنية', kicker:'للكتاب العربي الجميل', description:'إصدارات تحمل حيوية المكتبة العربية، بين التراث والقراءة المعاصرة.', accent:'#20205e', surface:'#e5e1ee', ink:'#171735', mark:'ر' }
-]);
-const defaultPublishers = ['دار الآداب','دار التنوير','دار المدى','منشورات الجمل','الشبكة العربية للأبحاث والنشر','دار الرافدين','دار الكرمة'].map((name, index) => ({ id:`default-${index}`, name, city:'الجزائر', logo:name.slice(0,1) }));
-let publishers = [...defaultPublishers, ...read('ghazal.customPublishers.v1', [])];
+const bookCover = (book, size = 'thumb') => coverPath(size === 'thumb' ? (book?.thumb || book?.display || book?.image) : (book?.display || book?.image)) || 'assets/placeholder-cover.svg';
+let books = [];
+let featuredBookIds = read('ghazal.featuredBooks.v1', []);
+let publisherFeatures = read('ghazal.publisherFeatures.v1', []);
+let publishers = read('ghazal.customPublishers.v1', []);
 let authorProfiles = read('ghazal.authorProfiles.v1', {});
-let genres = { literature:{title:'الأدب العالمي',description:'حكايات تعبر الحدود.'}, thought:{title:'الفكر والفلسفة',description:'أسئلة توسّع الأفق.'}, history:{title:'التاريخ والإنسانيات',description:'لفهم ما كان وما يكون.'}, ...read('ghazal.genres.v1', {}) };
-const predefinedBookGenres = ['الأدب العربي','الأدب العالمي','الرواية','القصص القصيرة','الشعر','المسرح','الفلسفة','علم النفس','علم الاجتماع','السياسة','التاريخ','السيرة الذاتية','الاقتصاد','العلوم','الفنون','التربية','التنمية الذاتية','الدين والفكر الإسلامي','أدب الأطفال','الرحلات'];
+let genres = read('ghazal.genres.v1', {});
 const genreMatches = (book, selected) => selected === 'all' || normalizeArabicSearch(book.genre).includes(normalizeArabicSearch(selected));
-let bookGenres = [...new Set([...predefinedBookGenres, ...read('ghazal.bookGenres.v1', []), ...books.map(book => book.genre).filter(Boolean)])].sort((a,b) => a.localeCompare(b, 'ar'));
-let collections = read('ghazal.collections.v1', [
-  { id:'collection-literature', slug:'rwayat-wa-adab', title:'روايات وأدب', description:'حكايات تبقى معك بعد الصفحة الأخيرة.', bookIds:books.filter(book => book.category === 'literature').map(book => book.id), active:true, homepage:true },
-  { id:'collection-thought', slug:'falsafa-wa-fikr', title:'فلسفة وفكر', description:'أسئلة توسّع الأفق وتعيد ترتيب الداخل.', bookIds:books.filter(book => book.category === 'thought').map(book => book.id), active:true, homepage:true },
-  { id:'collection-publishers', slug:'ikhtiyarat-al-nashirin', title:'اختيارات من دور النشر', description:'كتب مختارة من ناشرين نحب مشروعهم.', bookIds:books.slice(0, 8).map(book => book.id), active:true, homepage:true }
-]);
+let bookGenres = [...new Set([...read('ghazal.bookGenres.v1', []), ...books.map(book => book.genre).filter(Boolean)])].sort((a,b) => a.localeCompare(b, 'ar'));
+let collections = read('ghazal.collections.v1', []);
 let orders = read('ghazal.demoOrders.v1', []);
 let staffUsers = [];
 let auditEvents = [];
@@ -86,16 +75,21 @@ let bulkTemplateDetected = false;
 const ECOTRACK_COLUMNS = ['reference commande','nom et prenom du destinataire*','telephone*','telephone 2','code wilaya*','wilaya de livraison','commune de livraison*','adresse de livraison*','produit*','poids (kg)','montant du colis*','remarque','FRAGILE\n( si oui mettez OUI sinon laissez vide )','ECHANGE\n( si oui mettez OUI sinon laissez vide )','PICK UP\n( si oui mettez OUI sinon laissez vide )','RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )','STOP DESK\n( si oui mettez OUI sinon laissez vide )','Lien map'];
 let ownerTab = 'books';
 let collectionsLoaded = false;
+function refreshGenresFromBooks() {
+  const next = {};
+  for (const book of books) { const id = String(book.category || '').trim(); if (!id) continue; next[id] = { title: genres[id]?.title || id, description: genres[id]?.description || '' }; }
+  genres = next;
+  bookGenres = [...new Set(books.map(book => String(book.genre || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'ar'));
+}
 function applyAdminCatalog(payload) {
-  if (!payload?.books?.length) return;
-  books = payload.books.map(book => ({ ...book, image: book.image || 'meaning.jpg', stock: Number(book.stock ?? 0) }));
-  publishers = payload.publishers?.length ? [...publishers.filter(local => !payload.publishers.some(remote => remote.name === local.name)), ...payload.publishers] : publishers;
-  genres = payload.genres || genres;
-  bookGenres = [...new Set([...(payload.bookGenres || []), ...books.map(book => book.genre).filter(Boolean)])].sort((a,b) => a.localeCompare(b, 'ar'));
-  discounts = payload.discounts || [];
-  featuredBookIds = payload.featuredBookIds || featuredBookIds;
-  publisherFeatures = payload.publisherFeatures || publisherFeatures;
-  authorProfiles = payload.authorProfiles || authorProfiles;
+  books = Array.isArray(payload?.books) ? payload.books.map(book => ({ ...book, image: book.image || '', stock: Number(book.stock ?? 0) })) : [];
+  publishers = payload?.publishers || [];
+  genres = payload?.genres || {};
+  bookGenres = [...new Set([...(payload?.bookGenres || []), ...books.map(book => book.genre).filter(Boolean)])].sort((a,b) => a.localeCompare(b, 'ar'));
+  discounts = payload?.discounts || [];
+  featuredBookIds = payload?.featuredBookIds || [];
+  publisherFeatures = payload?.publisherFeatures || [];
+  authorProfiles = payload?.authorProfiles || {};
 }
 
 function ensureDashboardPanels() {
@@ -168,7 +162,7 @@ function updateOwnerStats() {
   const scopeNote = $('#owner-order-count')?.closest('article')?.querySelector('small'); if (scopeNote) scopeNote.textContent = statsScope === 'confirmed' ? 'المؤكدة والمُعالجة ضمن الفترة' : 'كل الطلبات غير الملغاة ضمن الفترة';
   const start = $('#owner-stats-start'); const end = $('#owner-stats-end'); if (start) start.value = statsStartDate || range.start; if (end) end.value = statsEndDate || range.end;
 }
-function orderBook(item) { return books.find(book => book.id === item.id) || { title: item.title || 'كتاب غير معروف', author: '', publisher: '', price: item.price || 0, image: 'meaning.jpg' }; }
+function orderBook(item) { return books.find(book => book.id === item.id) || { title: item.title || 'كتاب غير معروف', author: '', publisher: '', price: item.price || 0, image: '' }; }
 function orderDetails(order) {
   const customer = order.customer || {};
   const shipment = order.shipping || {};
@@ -212,7 +206,7 @@ function renderBooksWorkspace() {
   const persistentSearch = $('#owner-book-search'); if (persistentSearch) persistentSearch.value = bookQuery;
 }
 async function deleteBook(bookId) { const book = books.find(item => item.id === bookId); if (!book || !window.confirm(`حذف «${book.title}» نهائيًا؟`)) return; try { await window.GhazalAPI.deleteBook(sessionStorage.getItem(ADMIN_SESSION_KEY), bookId); const current = read('ghazal.customBooks.v1', []); save('ghazal.customBooks.v1', current.filter(item => item.id !== bookId)); alert('تم حذف الكتاب.'); location.reload(); } catch (error) { alert(error.message.includes('book_has_orders') ? 'لا يمكن حذف كتاب مرتبط بطلب. يمكنك جعله غير متوفر بدلًا من ذلك.' : 'تعذر حذف الكتاب.'); } }
-async function deleteBook(bookId) { const book = books.find(item => String(item.id) === String(bookId)); if (!book || !window.confirm(`حذف «${book.title}» نهائيًا؟`)) return; try { await window.GhazalAPI.deleteBook(sessionStorage.getItem(ADMIN_SESSION_KEY), bookId); } catch (error) { const code = String(error?.message || ''); if (!code.includes('not_found')) { alert(code.includes('book_has_orders') ? 'لا يمكن حذف كتاب مرتبط بطلبات سابقة. يمكنك جعله غير متوفر بدلًا من حذفه.' : code.includes('permission_denied') || code.includes('owner_only') ? 'حذف الكتب متاح للمالك فقط.' : `تعذر حذف الكتاب: ${code || 'خطأ غير معروف'}`); return; } } const current = read('ghazal.customBooks.v1', []); save('ghazal.customBooks.v1', current.filter(item => String(item.id) !== String(bookId))); books = books.filter(item => String(item.id) !== String(bookId)); alert('تم حذف الكتاب.'); renderBooksWorkspace(); }
+async function deleteBook(bookId) { const book = books.find(item => String(item.id) === String(bookId)); if (!book || !window.confirm(`حذف «${book.title}» نهائيًا؟`)) return; try { await window.GhazalAPI.deleteBook(sessionStorage.getItem(ADMIN_SESSION_KEY), bookId); } catch (error) { const code = String(error?.message || ''); if (!code.includes('not_found')) { alert(code.includes('book_has_orders') ? 'لا يمكن حذف كتاب مرتبط بطلبات سابقة. يمكنك جعله غير متوفر بدلًا من حذفه.' : code.includes('permission_denied') || code.includes('owner_only') ? 'حذف الكتب متاح للمالك فقط.' : `تعذر حذف الكتاب: ${code || 'خطأ غير معروف'}`); return; } } const current = read('ghazal.customBooks.v1', []); save('ghazal.customBooks.v1', current.filter(item => String(item.id) !== String(bookId))); books = books.filter(item => String(item.id) !== String(bookId)); refreshGenresFromBooks(); save('ghazal.genres.v1', genres); save('ghazal.bookGenres.v1', bookGenres); alert('تم حذف الكتاب.'); renderBooksWorkspace(); }
 function undoLastImport() { const last = read('ghazal.lastImport.v1', null); if (!last) return; if (!window.confirm('التراجع عن آخر استيراد؟')) return; save('ghazal.customBooks.v1', last.before || []); localStorage.removeItem('ghazal.lastImport.v1'); location.reload(); }
 function renderDiscountWorkspace() {
   const list = $('#owner-list'); discounts = read('ghazal.discounts.v1', []);
@@ -596,7 +590,7 @@ async function importMappedBooks() {
   importButton.disabled = true; importButton.textContent = 'جارٍ الاستيراد…';
   try {
   const missing = []; const imported = []; const coverFailures = [];
-  for (let rowIndex = 0; rowIndex < bulkBookRows.length; rowIndex += 1) { const row = bulkBookRows[rowIndex]; if (!row.some(value => String(value ?? '').trim() !== '')) continue; importButton.textContent = `جارٍ الاستيراد… ${rowIndex + 1}/${bulkBookRows.length}`; const values = Object.fromEntries(BULK_BOOK_FIELDS.map(field => [field.id, bulkValue(row, field)])); const requiredMissing = BULK_BOOK_FIELDS.filter(field => field.required && !values[field.id]); if (requiredMissing.length) { missing.push(rowIndex + 2); continue; } const price = importNumber(values.price); const stock = importNumber(values.stock, true); const pages = values.pages ? importNumber(values.pages, true) : null; const match = books.find(book => (values.isbn && book.isbn === values.isbn) || (book.title.trim().toLocaleLowerCase('ar') === values.title.trim().toLocaleLowerCase('ar') && book.author.trim().toLocaleLowerCase('ar') === values.author.trim().toLocaleLowerCase('ar'))); let cover = { image: match?.image || 'meaning.jpg', thumb: match?.thumb || '', display: match?.display || '' }; const coverSource = values.image || (String(match?.image || '').startsWith('data:') ? match.image : ''); if (coverSource) { try { const stored = await storeBookCover(coverSource); if (stored) cover = { image: stored.image || cover.image, thumb: stored.thumb || cover.thumb, display: stored.display || cover.display }; } catch { coverFailures.push(rowIndex + 2); } } imported.push({ ...(match || {}), id:match?.id || `book-${Date.now()}-${rowIndex}`, title:values.title, author:values.author, publisher:values.publisher, price, category:values.category || match?.category || 'literature', genre:values.genre || match?.genre || 'كتاب', review:values.review.slice(0, 1200), note:values.note || match?.note || '', stock, isbn:values.isbn || match?.isbn || '', ...(pages ? { pages } : {}), image:cover.image, ...(cover.thumb ? { thumb: cover.thumb } : {}), ...(cover.display ? { display: cover.display } : {}) }); }
+  for (let rowIndex = 0; rowIndex < bulkBookRows.length; rowIndex += 1) { const row = bulkBookRows[rowIndex]; if (!row.some(value => String(value ?? '').trim() !== '')) continue; importButton.textContent = `جارٍ الاستيراد… ${rowIndex + 1}/${bulkBookRows.length}`; const values = Object.fromEntries(BULK_BOOK_FIELDS.map(field => [field.id, bulkValue(row, field)])); const requiredMissing = BULK_BOOK_FIELDS.filter(field => field.required && !values[field.id]); if (requiredMissing.length) { missing.push(rowIndex + 2); continue; } const price = importNumber(values.price); const stock = importNumber(values.stock, true); const pages = values.pages ? importNumber(values.pages, true) : null; const match = books.find(book => (values.isbn && book.isbn === values.isbn) || (book.title.trim().toLocaleLowerCase('ar') === values.title.trim().toLocaleLowerCase('ar') && book.author.trim().toLocaleLowerCase('ar') === values.author.trim().toLocaleLowerCase('ar'))); let cover = { image: match?.image || '', thumb: match?.thumb || '', display: match?.display || '' }; const coverSource = values.image || (String(match?.image || '').startsWith('data:') ? match.image : ''); if (coverSource) { try { const stored = await storeBookCover(coverSource); if (stored) cover = { image: stored.image || cover.image, thumb: stored.thumb || cover.thumb, display: stored.display || cover.display }; } catch { coverFailures.push(rowIndex + 2); } } imported.push({ ...(match || {}), id:match?.id || `book-${Date.now()}-${rowIndex}`, title:values.title, author:values.author, publisher:values.publisher, price, category:values.category || match?.category || 'غير مصنف', genre:values.genre || match?.genre || 'عام', review:values.review.slice(0, 1200), note:values.note || match?.note || '', stock, isbn:values.isbn || match?.isbn || '', ...(pages ? { pages } : {}), image:cover.image, ...(cover.thumb ? { thumb: cover.thumb } : {}), ...(cover.display ? { display: cover.display } : {}) }); }
   if (missing.length) { alert(`هناك صفوف ناقصة في الحقول الإلزامية: ${missing.slice(0, 8).join('، ')}${missing.length > 8 ? '…' : ''}`); return; }
   if (coverFailures.length) alert(`تم استيراد الكتب، لكن تعذّر تنزيل أغلفة ${coverFailures.length} صفًا (${coverFailures.slice(0, 8).join('، ')}${coverFailures.length > 8 ? '…' : ''}). سيبقى الغلاف السابق أو الافتراضي، ويمكنك إضافته لاحقًا من تعديل الكتاب.`);
   if (!imported.length) { alert('لم يتم العثور على صفوف كتب صالحة للاستيراد.'); return; }
@@ -605,6 +599,8 @@ async function importMappedBooks() {
   // this, the server received the old catalog and the reload hid new imports.
   const importedById = new Map(imported.map(book => [book.id, book]));
   books = [...books.filter(book => !importedById.has(book.id)), ...imported];
+  refreshGenresFromBooks();
+  save('ghazal.genres.v1', genres); save('ghazal.bookGenres.v1', bookGenres);
   // The undo snapshot only needs the previous catalog; embedding the imported
   // covers twice overflows the browser's localStorage quota and aborted the
   // import before the server sync. Keep ids only, and degrade gracefully.
@@ -636,10 +632,10 @@ $('#owner-form').addEventListener('submit', async event => {
   else {
     const bulkRows = await readFileText(form.elements.bulk); const current = read('ghazal.customBooks.v1', []);
     if (bulkRows) {
-      const added = csvBookRows(bulkRows).map((values, index) => ({ id:`book-${Date.now()}-${index}`, title:values[0], author:values[1], publisher:values[2], price:Number(values[3]) || 0, category:values[4] || 'literature', genre:values[5] || 'كتاب', review:values[6] || '', note:values[6] || 'كتاب جديد على رفوف الغزال.', stock:Math.max(0, Number(values[7]) || 0), image:'meaning.jpg' }));
-      books = [...books, ...added]; bookGenres = [...new Set([...bookGenres, ...added.map(book => book.genre).filter(Boolean)])].sort((a,b) => a.localeCompare(b, 'ar')); save('ghazal.customBooks.v1', [...current, ...added]); save('ghazal.bookGenres.v1', bookGenres);
+      const added = csvBookRows(bulkRows).map((values, index) => ({ id:`book-${Date.now()}-${index}`, title:values[0], author:values[1], publisher:values[2], price:Number(values[3]) || 0, category:values[4] || 'غير مصنف', genre:values[5] || 'عام', review:values[6] || '', note:values[6] || 'كتاب جديد على رفوف الغزال.', stock:Math.max(0, Number(values[7]) || 0), image:'' }));
+      books = [...books, ...added]; refreshGenresFromBooks(); save('ghazal.customBooks.v1', [...current, ...added]); save('ghazal.genres.v1', genres); save('ghazal.bookGenres.v1', bookGenres);
     } else {
-      const id = form.dataset.editId || `book-${Date.now()}`; const existing = books.find(book => book.id === id) || {}; const selectedGenre = String(data.get('genre') || '').trim(); const genre = selectedGenre === '__new__' ? String(data.get('genreCustom') || '').trim() : selectedGenre; if (!genre) { alert('اختر نوع الكتاب أو أضف نوعًا جديدًا.'); return; } let cover = { image: existing.image || 'meaning.jpg', thumb: existing.thumb || '', display: existing.display || '' }; const coverFile = form.elements.cover?.files?.[0]; if (coverFile) { try { const stored = await storeBookCover(await blobDataUrl(coverFile)); if (stored?.image) cover = { image: stored.image, thumb: stored.thumb || '', display: stored.display || '' }; } catch { alert('تعذر تخزين صورة الغلاف. جرّب صورة أخرى أصغر.'); return; } } const book = { ...existing, id, title:data.get('title'), author:data.get('author'), publisher:data.get('publisher'), price:Number(data.get('price')) || 0, category:data.get('category'), genre, note:data.get('note'), review:String(data.get('review') || existing.review || '').slice(0, 1200), stock:Math.max(0, Number(data.get('stock')) || 0), image:cover.image, ...(cover.thumb ? { thumb: cover.thumb } : {}), ...(cover.display ? { display: cover.display } : {}) }; books = [...books.filter(item => item.id !== id), book]; bookGenres = [...new Set([...bookGenres, genre])].sort((a,b) => a.localeCompare(b, 'ar')); const next = current.filter(item => item.id !== id); save('ghazal.customBooks.v1', [...next, book]); save('ghazal.bookGenres.v1', bookGenres);
+      const id = form.dataset.editId || `book-${Date.now()}`; const existing = books.find(book => book.id === id) || {}; const selectedGenre = String(data.get('genre') || '').trim(); const genre = selectedGenre === '__new__' ? String(data.get('genreCustom') || '').trim() : selectedGenre; if (!genre) { alert('اختر نوع الكتاب أو أضف نوعًا جديدًا.'); return; } let cover = { image: existing.image || '', thumb: existing.thumb || '', display: existing.display || '' }; const coverFile = form.elements.cover?.files?.[0]; if (coverFile) { try { const stored = await storeBookCover(await blobDataUrl(coverFile)); if (stored?.image) cover = { image: stored.image, thumb: stored.thumb || '', display: stored.display || '' }; } catch { alert('تعذر تخزين صورة الغلاف. جرّب صورة أخرى أصغر.'); return; } } const book = { ...existing, id, title:data.get('title'), author:data.get('author'), publisher:data.get('publisher'), price:Number(data.get('price')) || 0, category:data.get('category'), genre, note:data.get('note'), review:String(data.get('review') || existing.review || '').slice(0, 1200), stock:Math.max(0, Number(data.get('stock')) || 0), image:cover.image, ...(cover.thumb ? { thumb: cover.thumb } : {}), ...(cover.display ? { display: cover.display } : {}) }; books = [...books.filter(item => item.id !== id), book]; refreshGenresFromBooks(); const next = current.filter(item => item.id !== id); save('ghazal.customBooks.v1', [...next, book]); save('ghazal.genres.v1', genres); save('ghazal.bookGenres.v1', bookGenres);
     }
   }
   try { await flushCatalogSync(); } catch { alert('تم الحفظ محليًا، لكن تعذرت مزامنته مع الخادم.'); } $('#owner-form-overlay').hidden = true; location.reload();

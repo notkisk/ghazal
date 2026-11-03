@@ -19,7 +19,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS publishers (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, city TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', logo TEXT, created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS discounts (id INTEGER PRIMARY KEY, code TEXT UNIQUE, type TEXT NOT NULL CHECK(type IN ('percent','fixed')), value REAL NOT NULL CHECK(value >= 0), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY, reference TEXT UNIQUE NOT NULL, customer_json TEXT NOT NULL, subtotal INTEGER NOT NULL, delivery INTEGER NOT NULL, total INTEGER NOT NULL, payment TEXT NOT NULL, shipment_type TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('new','confirmed','preparing','shipped','delivered','cancelled','returned')), notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS order_items (order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE, book_id TEXT NOT NULL REFERENCES books(id), title TEXT NOT NULL, qty INTEGER NOT NULL CHECK(qty > 0), unit_price INTEGER NOT NULL, PRIMARY KEY(order_id, book_id));
+  CREATE TABLE IF NOT EXISTS order_items (order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE, book_id TEXT NOT NULL, title TEXT NOT NULL, qty INTEGER NOT NULL CHECK(qty > 0), unit_price INTEGER NOT NULL, PRIMARY KEY(order_id, book_id));
   CREATE TABLE IF NOT EXISTS order_events (id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE, status TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', user_id INTEGER REFERENCES users(id), created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS reservations (order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE, book_id TEXT NOT NULL REFERENCES books(id), qty INTEGER NOT NULL, released_at TEXT, PRIMARY KEY(order_id, book_id));
   CREATE TABLE IF NOT EXISTS restocks (id INTEGER PRIMARY KEY, book_id TEXT NOT NULL REFERENCES books(id), quantity INTEGER NOT NULL, reason TEXT NOT NULL, user_id INTEGER REFERENCES users(id), created_at TEXT NOT NULL);
@@ -44,6 +44,22 @@ const bookColumns = db.prepare('PRAGMA table_info(books)').all().map(column => c
 if (!bookColumns.includes('pages')) db.exec('ALTER TABLE books ADD COLUMN pages INTEGER');
 if (!bookColumns.includes('thumb')) db.exec('ALTER TABLE books ADD COLUMN thumb TEXT');
 if (!bookColumns.includes('display')) db.exec('ALTER TABLE books ADD COLUMN display TEXT');
+// Orders keep their line-item snapshots (title, qty, price) even after a book is
+// removed from the catalog. Older databases enforced a FK to books, which made a
+// full catalog reset impossible without losing order history.
+const orderItemSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='order_items'").get()?.sql || '';
+if (/REFERENCES\s+books\s*\(/i.test(orderItemSql)) {
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec('CREATE TABLE order_items_new (order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE, book_id TEXT NOT NULL, title TEXT NOT NULL, qty INTEGER NOT NULL CHECK(qty > 0), unit_price INTEGER NOT NULL, PRIMARY KEY(order_id, book_id))');
+    db.exec('INSERT INTO order_items_new (order_id,book_id,title,qty,unit_price) SELECT order_id,book_id,title,qty,unit_price FROM order_items');
+    db.exec('DROP TABLE order_items');
+    db.exec('ALTER TABLE order_items_new RENAME TO order_items');
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  finally { db.exec('PRAGMA foreign_keys = ON'); }
+}
 
 const now = () => new Date().toISOString();
 const rateBuckets = new Map();
@@ -130,36 +146,34 @@ function migrateEmbeddedCovers() {
   return migrated;
 }
 
-const seedBooks = [
-  ['stranger','الغريب','ألبير كامو','منشورات الجمل','literature','رواية مترجمة',1900,'stranger.jpg'], ['world-yesterday','عالم الأمس','شتيفان تسفايغ','دار المدى','history','سيرة · تاريخ',2600,'world-yesterday.jpg'], ['meaning','الإنسان يبحث عن معنى','فيكتور فرانكل','آكيول','thought','فكر · علم نفس',2200,'meaning.jpg'], ['orientalism','الاستشراق','إدوارد سعيد','دار الآداب','history','فكر · نقد ثقافي',3900,'orientalism.jpg'], ['meditations','التأملات','ماركوس أوريليوس','طبعة عربية','thought','فلسفة · كلاسيكيات',2100,'meditations.jpg'], ['solitude','مئة عام من العزلة','غابرييل غارسيّا ماركيز','دار التنوير','literature','رواية مترجمة',3200,'solitude.jpg'], ['letters','رسائل إلى شاعر شاب','راينر ماريا ريلكه','دار الكرمة','literature','أدب · رسائل',1500,'letters.jpg'], ['sophies-world','عالم صوفي','جوستاين غاردر','دار المنى','thought','رواية · فلسفة',3600,'sophies-world.jpg'], ['plague','الطاعون','ألبير كامو','دار التنوير','literature','رواية مترجمة',2400,'plague.jpg'], ['name-of-rose','اسم الوردة','أمبرتو إيكو','دار الكتاب الجديد','literature','رواية · تاريخ',3200,'name-of-rose.jpg'], ['art-of-loving','فن الحب','إريك فروم','طبعة عربية','thought','فكر · إنسانيات',1800,'art-of-loving.jpg'], ['brief-time','تاريخ موجز للزمان','ستيفن هوكينغ','دار التنوير','history','علم · إنسانيات',2900,'brief-time.jpg']
-];
-if (!db.prepare('SELECT 1 FROM books LIMIT 1').get()) { const insert = db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,image,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'); const stamp = now(); for (const b of seedBooks) insert.run(...b.slice(0, 7), 10, b[7], 'كتاب متاح على رفوف الغزال.', stamp, stamp); }
+// One-time clean slate: the catalog is now built exclusively from uploaded
+// spreadsheets. The version key makes this safe to keep in the startup path —
+// after the first run it never touches imported books again.
+const CATALOG_RESET_VERSION = '2026-11-clean-slate';
+function resetCatalogOnce() {
+  const row = db.prepare('SELECT value_json FROM store_content WHERE key=?').get('catalogReset');
+  if (row && parse(row.value_json) === CATALOG_RESET_VERSION) return false;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare('DELETE FROM reservations').run();
+    db.prepare('DELETE FROM restocks').run();
+    db.prepare('DELETE FROM collection_books').run();
+    db.prepare('DELETE FROM collections').run();
+    db.prepare('DELETE FROM books').run();
+    db.prepare('DELETE FROM publishers').run();
+    db.prepare('DELETE FROM authors').run();
+    for (const key of ['genres','bookGenres','featured','publisherFeatures','authorProfiles']) db.prepare('DELETE FROM store_content WHERE key=?').run(key);
+    db.prepare('DELETE FROM store_content WHERE key=?').run('catalogReset');
+    db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('catalogReset', json(CATALOG_RESET_VERSION), now());
+    db.exec('COMMIT');
+    return true;
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+if (resetCatalogOnce()) console.log('Ghazal: catalog reset to an empty state (re-import your books to rebuild it)');
 const configuredPassword = process.env.GHAZAL_ADMIN_PASSWORD;
 if (!db.prepare('SELECT 1 FROM users LIMIT 1').get() && configuredPassword) db.prepare('INSERT INTO users (email,password_hash,role,created_at) VALUES (?,?,?,?)').run(process.env.GHAZAL_ADMIN_EMAIL || 'owner@alghazal.local', passwordHash(configuredPassword), 'owner', now());
-if (!db.prepare('SELECT 1 FROM collections LIMIT 1').get()) {
-  const stamp = now(); const seeds = [['collection-literature','rwayat-wa-adab','روايات وأدب','حكايات تبقى معك بعد الصفحة الأخيرة.',1],['collection-thought','falsafa-wa-fikr','فلسفة وفكر','أسئلة توسّع الأفق وتعيد ترتيب الداخل.',1],['collection-publishers','ikhtiyarat-al-nashirin','اختيارات من دور النشر','كتب مختارة من ناشرين نحب مشروعهم.',1]];
-  const add = db.prepare('INSERT INTO collections (id,slug,title,description,active,homepage,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'); const link = db.prepare('INSERT INTO collection_books (collection_id,book_id,position) VALUES (?,?,?)');
-  for (const [id,slug,title,description,homepage] of seeds) { add.run(id,slug,title,description,1,homepage,stamp,stamp); const category = id.includes('literature') ? 'literature' : id.includes('thought') ? 'thought' : null; const selected = category ? db.prepare('SELECT id FROM books WHERE category=? ORDER BY title').all(category) : db.prepare('SELECT id FROM books ORDER BY title LIMIT 8').all(); selected.forEach((book,index) => link.run(id,book.id,index)); }
-}
-const defaultGenres = { literature:{title:'الأدب العالمي',description:'حكايات تعبر الحدود، وأصوات تترك أثرًا بعد الصفحة الأخيرة.'}, thought:{title:'الفكر والفلسفة',description:'أسئلة توسّع الأفق، وكتب تساعدنا على النظر من زاوية أخرى.'}, history:{title:'التاريخ والإنسانيات',description:'لفهم ما كان، وما يكون، والإنسان في قلب الحكاية.'} };
-const predefinedBookGenres = ['الأدب العربي','الأدب العالمي','الرواية','القصص القصيرة','الشعر','المسرح','الفلسفة','علم النفس','علم الاجتماع','السياسة','التاريخ','السيرة الذاتية','الاقتصاد','العلوم','الفنون','التربية','التنمية الذاتية','الدين والفكر الإسلامي','أدب الأطفال','الرحلات'];
-const defaultBookGenres = [...new Set([...predefinedBookGenres, ...db.prepare("SELECT genre FROM books WHERE genre IS NOT NULL AND genre != '' ORDER BY genre").all().map(row => row.genre)])];
-const defaultPublishers = [['adab','دار الآداب','بيروت','ا'],['tanweer','دار التنوير','بيروت · القاهرة','ت'],['mada','دار المدى','دمشق · بيروت','م'],['jamal','منشورات الجمل','بيروت · بغداد','ج'],['arab-network','الشبكة العربية للأبحاث والنشر','الدوحة','ش'],['rafidain','دار الرافدين','بيروت · بغداد','ر'],['karma','دار الكرمة','القاهرة','ك']];
-if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get('genres')) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('genres', json(defaultGenres), now());
-if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get('bookGenres')) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('bookGenres', json(defaultBookGenres), now());
-if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get('discounts')) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('discounts', '[]', now());
-if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get('featured')) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('featured', json(['meaning','letters','orientalism','meditations']), now());
-if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get('authorProfiles')) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('authorProfiles', '{}', now());
-if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get('publisherFeatures')) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('publisherFeatures', json([
-  { id:'mada', publisher:'دار المدى', active:true, layoutVersion:3, slogan:'بيت الثقافة والإبداع', kicker:'أدبٌ وفكرٌ وفنون', description:'رفّ من الكتب التي تصنع ذائقة، وتترك أثرًا أبعد من الصفحة الأخيرة.', accent:'#e51c2a', surface:'#f4d8c8', ink:'#251b19', mark:'م' },
-  { id:'jamal', publisher:'منشورات الجمل', active:true, layoutVersion:2, slogan:'أصواتٌ من العالم', kicker:'أصواتٌ لا تشبه سواها', description:'دار عريقة في الترجمة الأدبية والفلسفية، وكتب تمنح القارئ فرصة الإصغاء إلى أصوات مختلفة.', accent:'#bd1d2d', surface:'#e9d8b9', ink:'#271914', mark:'ج' },
-  { id:'arab-network', publisher:'الشبكة العربية للأبحاث والنشر', active:true, layoutVersion:2, slogan:'بوابتك نحو عالم المعرفة', kicker:'معرفةٌ عربيةٌ رصينة', description:'كتب الفكر والتاريخ والسياسة التي تمنح السؤال العربي مساحة أوسع.', accent:'#2e579a', surface:'#dbe8ef', ink:'#18243b', mark:'ش' },
-  { id:'rafidain', publisher:'دار الرافدين', active:true, layoutVersion:2, slogan:'من وادي الرافدين بدأت الكتابة والمدنية', kicker:'للكتاب العربي الجميل', description:'إصدارات تحمل حيوية المكتبة العربية، بين التراث والقراءة المعاصرة.', accent:'#20205e', surface:'#e5e1ee', ink:'#171735', mark:'ر' }
-]), now());
-const publisherSlogans = { mada:'بيت الثقافة والإبداع', jamal:'أصواتٌ من العالم', 'arab-network':'بوابتك نحو عالم المعرفة', rafidain:'من وادي الرافدين بدأت الكتابة والمدنية' };
-const publisherFeatureRow = db.prepare('SELECT value_json FROM store_content WHERE key=?').get('publisherFeatures');
-if (publisherFeatureRow) { const currentFeatures = parse(publisherFeatureRow.value_json, []); const updatedFeatures = currentFeatures.map(item => ({ ...item, active:item.id === 'mada' && item.layoutVersion !== 3 ? true : item.active, slogan:publisherSlogans[item.id] || item.slogan || '', layoutVersion:3 })); if (JSON.stringify(currentFeatures) !== JSON.stringify(updatedFeatures)) db.prepare('UPDATE store_content SET value_json=?,updated_at=? WHERE key=?').run(json(updatedFeatures),now(),'publisherFeatures'); }
-{ const insert = db.prepare('INSERT OR IGNORE INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?)'); const stamp = now(); defaultPublishers.forEach(([,name,city,logo]) => insert.run(name,city,'إصدارات مختارة من هذا الناشر.',logo,stamp)); }
+const emptyContent = { genres:'{}', bookGenres:'[]', discounts:'[]', featured:'[]', authorProfiles:'{}', publisherFeatures:'[]' };
+for (const [key, value] of Object.entries(emptyContent)) if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get(key)) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run(key, value, now());
 
 const migratedCovers = migrateEmbeddedCovers();
 if (migratedCovers) console.log(`Ghazal: migrated ${migratedCovers} embedded cover(s) to ${COVERS_DIR}`);
@@ -167,17 +181,30 @@ if (migratedCovers) console.log(`Ghazal: migrated ${migratedCovers} embedded cov
 function bookList(url) { const q = String(url.searchParams.get('q') || '').trim(); const where = q ? `WHERE title LIKE @q OR author LIKE @q OR publisher LIKE @q OR genre LIKE @q OR isbn LIKE @q` : ''; return db.prepare(`SELECT *, stock-reserved AS available FROM books ${where} ORDER BY title`).all(q ? { q: `%${q}%` } : {}); }
 function collectionList(includeInactive = false) { const collections = db.prepare(`SELECT * FROM collections ${includeInactive ? '' : 'WHERE active=1'} ORDER BY created_at`).all(); return collections.map(collection => ({ ...collection, active: Boolean(collection.active), homepage: Boolean(collection.homepage), bookIds: db.prepare('SELECT book_id FROM collection_books WHERE collection_id=? ORDER BY position').all(collection.id).map(item => item.book_id) })); }
 function contentValue(key, fallback) { const row = db.prepare('SELECT value_json FROM store_content WHERE key=?').get(key); return row ? parse(row.value_json, fallback) : fallback; }
+function deriveGenres(books, stored = {}) {
+  const genres = {};
+  for (const book of books) {
+    const id = String(book.category || '').trim();
+    if (!id) continue;
+    genres[id] = { title: stored[id]?.title || id, description: stored[id]?.description || '' };
+  }
+  return genres;
+}
+function deriveBookGenres(books) {
+  return [...new Set(books.map(book => String(book.genre || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+}
 function catalogPayload() {
   const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const weeklySales = db.prepare("SELECT book_id, SUM(qty) AS quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status IN ('confirmed','preparing','shipped','delivered') AND orders.created_at >= ? GROUP BY book_id ORDER BY quantity DESC, MAX(orders.created_at) DESC LIMIT 8").all(weekStart);
   const allTimeSales = db.prepare("SELECT book_id, SUM(qty) AS quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status IN ('confirmed','preparing','shipped','delivered') GROUP BY book_id ORDER BY quantity DESC, MAX(orders.created_at) DESC LIMIT 8").all();
   const bestSellerRows = weeklySales.length ? weeklySales : allTimeSales;
-  const fallbackFeatured = contentValue('featured', ['meaning','letters','orientalism','meditations']);
+  const fallbackFeatured = contentValue('featured', []);
   const bestSellerBookIds = bestSellerRows.length ? bestSellerRows.map(row => row.book_id) : fallbackFeatured;
   const profiles = contentValue('authorProfiles', {}); const books = bookList(new URL('http://local/api/books'));
-  const bookGenres = [...new Set([...(contentValue('bookGenres', defaultBookGenres) || []), ...defaultBookGenres, ...books.map(book => book.genre).filter(Boolean)])].sort((a,b) => a.localeCompare(b, 'ar'));
+  const genres = deriveGenres(books, contentValue('genres', {}));
+  const bookGenres = deriveBookGenres(books);
   const authorSpotlight = Object.entries(profiles).map(([name, profile]) => ({ name, ...profile, bookIds: db.prepare('SELECT id FROM books WHERE author=? ORDER BY title').all(name).map(row => row.id) })).filter(author => author.bio && author.bookIds.length >= 2).sort((a,b) => Number(b.featured) - Number(a.featured) || b.bookIds.length - a.bookIds.length)[0] || null;
-  return { books, publishers: db.prepare('SELECT * FROM publishers ORDER BY name').all(), genres: contentValue('genres', defaultGenres), bookGenres, discounts: contentValue('discounts', []), featuredBookIds: fallbackFeatured, publisherFeatures: contentValue('publisherFeatures', []), bestSellerBookIds, bestSellerSales: bestSellerRows, bestSellerWindow: weeklySales.length ? 'weekly' : allTimeSales.length ? 'all-time' : 'editorial-fallback', authorProfiles: profiles, authorSpotlight, collections: collectionList(false) };
+  return { books, publishers: db.prepare('SELECT * FROM publishers ORDER BY name').all(), genres, bookGenres, discounts: contentValue('discounts', []), featuredBookIds: fallbackFeatured, publisherFeatures: contentValue('publisherFeatures', []), bestSellerBookIds, bestSellerSales: bestSellerRows, bestSellerWindow: weeklySales.length ? 'weekly' : allTimeSales.length ? 'all-time' : 'editorial-fallback', authorProfiles: profiles, authorSpotlight, collections: collectionList(false) };
 }
 async function sendMetaPurchase(body, reference, total, items, request) {
   const pixel = process.env.META_PIXEL_ID; const token = process.env.META_ACCESS_TOKEN; const eventId = String(body.metaEventId || reference); const previous = db.prepare('SELECT status FROM conversion_events WHERE event_id=?').get(eventId); if (previous?.status === 'sent' || metaEventsInFlight.has(eventId)) return; if (!pixel || !token) { recordConversion(eventId,'Purchase',reference,'meta','skipped',{reason:'not_configured'}); return; }
@@ -328,10 +355,25 @@ async function api(req, res, url) {
       const body = await readBody(req); const books = Array.isArray(body.books) ? body.books : []; const publishers = Array.isArray(body.publishers) ? body.publishers : []; const stamp = now();
       db.exec('BEGIN IMMEDIATE'); try {
         const bookUpsert = db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,isbn,pages,image,thumb,display,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,author=excluded.author,publisher=excluded.publisher,category=excluded.category,genre=excluded.genre,price=excluded.price,stock=excluded.stock,isbn=excluded.isbn,pages=excluded.pages,image=excluded.image,thumb=COALESCE(excluded.thumb,books.thumb),display=COALESCE(excluded.display,books.display),note=excluded.note,updated_at=excluded.updated_at');
-        for (const book of books) { if (!book.id || !book.title || !book.author || !book.publisher) throw new Error('invalid_book'); const pages = Math.trunc(Number(book.pages)); bookUpsert.run(String(book.id),String(book.title),String(book.author),String(book.publisher),String(book.category || 'literature'),String(book.genre || 'كتاب'),Math.max(0,Number(book.price)||0),Math.max(0,Number(book.stock)||0),String(book.isbn || ''),Number.isFinite(pages) && pages > 0 ? pages : null,String(book.image || 'meaning.jpg'),book.thumb ? String(book.thumb) : null,book.display ? String(book.display) : null,String(book.note || book.review || ''),stamp,stamp); }
+        for (const book of books) { if (!book.id || !book.title || !book.author || !book.publisher) throw new Error('invalid_book'); const pages = Math.trunc(Number(book.pages)); bookUpsert.run(String(book.id),String(book.title),String(book.author),String(book.publisher),String(book.category || 'غير مصنف'),String(book.genre || 'عام'),Math.max(0,Number(book.price)||0),Math.max(0,Number(book.stock)||0),String(book.isbn || ''),Number.isFinite(pages) && pages > 0 ? pages : null,String(book.image || ''),book.thumb ? String(book.thumb) : null,book.display ? String(book.display) : null,String(book.note || book.review || ''),stamp,stamp); }
+        // Publishers, authors, categories, and sub-categories are derived from
+        // the catalog itself so an uploaded spreadsheet is the single source of
+        // truth. Existing descriptions survive when the name is unchanged.
+        const dbBooks = db.prepare('SELECT author,publisher,category,genre FROM books').all();
+        const derivedPublishers = [...new Set(dbBooks.map(book => String(book.publisher || '').trim()).filter(Boolean))];
+        const publisherInsert = db.prepare('INSERT OR IGNORE INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?)');
+        derivedPublishers.forEach(name => publisherInsert.run(name,'','إصدارات من هذا الناشر.',name.slice(0,1),stamp));
         const publisherUpsert = db.prepare('INSERT INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET city=excluded.city,description=excluded.description,logo=excluded.logo');
         for (const publisher of publishers) if (publisher.name) publisherUpsert.run(String(publisher.name),String(publisher.city || ''),String(publisher.description || ''),String(publisher.logo || publisher.name.slice(0,1)),stamp);
-        for (const key of ['genres','bookGenres','discounts','featured','authorProfiles','publisherFeatures']) if (body[key] !== undefined) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run(key,json(body[key]),stamp);
+        const authorInsert = db.prepare('INSERT INTO authors (name,created_at) VALUES (?,?) ON CONFLICT(name) DO NOTHING');
+        [...new Set(dbBooks.map(book => String(book.author || '').trim()).filter(Boolean))].forEach(name => authorInsert.run(name,stamp));
+        const storedGenres = contentValue('genres', {});
+        const incomingGenres = body.genres && typeof body.genres === 'object' ? body.genres : {};
+        const genresPayload = deriveGenres(dbBooks, { ...storedGenres, ...incomingGenres });
+        const bookGenresPayload = deriveBookGenres(dbBooks);
+        db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('genres',json(genresPayload),stamp);
+        db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('bookGenres',json(bookGenresPayload),stamp);
+        for (const key of ['discounts','featured','authorProfiles','publisherFeatures']) if (body[key] !== undefined) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run(key,json(body[key]),stamp);
         audit(user,'update','catalog','store',{books:books.length,publishers:publishers.length}); db.exec('COMMIT'); return send(res,200,catalogPayload());
       } catch (error) { db.exec('ROLLBACK'); throw error; }
     }

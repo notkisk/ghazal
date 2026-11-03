@@ -31,6 +31,12 @@ test('storefront keeps mobile checkout and responsive shelf behavior', () => {
   assert.match(read('index.html'), /home-book-shelves|newsletter-form/);
 });
 
+test('backup script never mutates the database at require time', () => {
+  const backup = read('scripts/backup-db.js');
+  assert.doesNotMatch(backup, /require\(['"]\.\.\/server['"]\)/);
+  assert.match(backup, /node:fs/);
+});
+
 test('production discovery files and import template are present', () => {
   assert.match(read('robots.txt'), /Sitemap:/);
   assert.match(read('sitemap.xml'), /<urlset/);

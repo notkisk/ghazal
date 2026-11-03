@@ -371,3 +371,4 @@ img.cover.edition-image{display:block;padding:0;object-fit:cover;object-position
 .admin-row-end{display:flex;align-items:center;gap:12px;justify-content:flex-end}
 .admin-remove{color:#9b3d33}
 .admin-remove:hover{color:var(--ink)}
+.hero-book .hero-cover-image{width:100%;height:100%;object-fit:cover;border-radius:1px;cursor:pointer}
