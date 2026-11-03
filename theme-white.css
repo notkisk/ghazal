@@ -1,0 +1,205 @@
+/* White theme override. Load after styles.css and enhancements.css. */
+:root {
+  --sand: #ffffff;
+  --sand-light: #fafafa;
+  --ivory: #ffffff;
+  --ink: #171717;
+  --muted: #666666;
+  --line: rgba(23, 23, 23, .16);
+  --brown: #7a4d32;
+}
+
+body,
+.site-header,
+.marquee,
+.departments,
+.journal,
+.feature-book-stage,
+.book-card-art,
+.footer,
+.quote-band,
+.admin-body { background: #ffffff; }
+
+.marquee { background: #f7f7f7; }
+.departments { background: #fafafa; }
+.journal { background: #f5f5f5; }
+.feature-book-stage { background: #f7f7f7; }
+.book-card-art,
+.book-card:nth-child(4n+2) .book-card-art,
+.book-card:nth-child(4n+3) .book-card-art,
+.book-card:nth-child(4n+4) .book-card-art { background: #f5f5f5; }
+.most-read,
+.book-detail-cover,
+.product-image,
+.home-carousel-button { background: #ffffff; }
+.most-read-copy h2 em { color: var(--brown); }
+.most-read .underlined-link:hover { color: var(--brown); }
+.home-carousel-button { border-color: #d4d4d4; }
+.home-carousel-button:hover { background: #171717; color: #ffffff; }
+.home-carousel-prev::before { content: '←'; }
+.home-carousel-next::before { content: '→'; }
+
+/* Final surface guard: these are page backgrounds, not book-cover artwork. */
+.product-image,
+.book-detail-cover,
+.feature-book-stage,
+.book-card-art,
+.catalog-grid .book-card-art,
+.most-read { background: #ffffff !important; }
+.quote-band, .footer, .announcement { background: #171717; }
+
+.hero-description,
+.heading-aside p,
+.department-intro > p:not(.eyebrow),
+.publishers-intro,
+.journal-copy > p:not(.eyebrow) { color: #555555; }
+
+.custom-select-trigger,
+.custom-select-menu,
+.dashboard-card,
+.owner-app > .stat-grid article { background: #ffffff; }
+.custom-select-trigger, .custom-select-menu { border-color: #d6d6d6; }
+.custom-select-menu button:hover,
+.custom-select-menu button[aria-selected="true"] { background: #f1f1f1; }
+
+/* White controls for the storefront book filters and carousel. */
+.catalog-toolbar select,
+.catalog-filters button,
+.filter,
+.load-more { background: #ffffff; }
+.catalog-toolbar select,
+.catalog-filters button,
+.filter,
+.load-more { border-color: #d4d4d4; }
+.catalog-filters button:hover,
+.filter:hover,
+.load-more:hover { background: #f1f1f1; }
+.catalog-filters button.active,
+.filter.active { background: #ffffff; color: var(--ink); }
+
+/* Dashboard controls use the same neutral white treatment. */
+.admin-tabs button,
+.stats-toolbar select,
+.stats-toolbar input,
+.history-filter select,
+.permission-editor select { background: #ffffff; }
+.admin-tabs button { border-color: #e0e0e0; }
+.admin-tabs button:hover { background: #f1f1f1; }
+.admin-tabs button.active { background: #ffffff; color: var(--ink); border-color: var(--brown); }
+
+.role-badge,
+.owner-guide,
+.collection-admin-card,
+.team-member,
+.audit-row,
+.order-confirm-actions,
+.permission-editor,
+.book-admin-card,
+.discount-admin-card,
+.coupon-box { background: #ffffff; }
+.dashboard-card,
+.collection-admin-card,
+.team-member,
+.audit-row { border-color: #dedede; }
+
+.journal-page-story,
+.author-spotlight,
+.owner-guide,
+.featured-picker-selected { background: #fafafa; }
+.stats-toolbar select,
+.stats-toolbar input,
+.history-filter select,
+.permission-editor select,
+.discount-admin-card,
+.coupon-box,
+.discount-book-search,
+.unavailable-full-card,
+.featured-picker-search { background: #ffffff; }
+
+.quote-band { color: #ffffff; }
+.footer { color: #f0f0f0; }
+
+/* RTL carousel: previous belongs on the right, next on the left. */
+.home-carousel {
+  direction: ltr;
+  grid-template-areas:
+    "next viewport prev"
+    "indicator indicator indicator";
+}
+.home-carousel-viewport { grid-area: viewport; }
+.home-carousel-prev { grid-area: prev; }
+.home-carousel-next { grid-area: next; }
+.home-carousel-indicator { grid-area: indicator; }
+.home-carousel-button {
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  align-self: center;
+  padding: 0;
+  line-height: 1;
+}
+.home-carousel-prev::before { content: '→'; }
+.home-carousel-next::before { content: '←'; }
+
+.home-carousel.is-static {
+  grid-template-areas: "viewport";
+}
+
+/* Keep text-and-arrow action buttons visually centered as a single unit. */
+.button {
+  justify-content: center;
+  gap: 16px;
+}
+.button > span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  line-height: 1;
+}
+
+/* Restore one warm anchor section for contrast against the white page. */
+.most-read {
+  background: #b79470 !important;
+  color: #1b1915;
+}
+.most-read-copy h2 em { color: #f4e9d4; }
+.most-read .underlined-link:hover { color: #f4e9d4; }
+
+.most-read-cover-image {
+  display: block;
+  width: min(100%, 250px);
+  height: 370px;
+  margin: auto;
+  object-fit: cover;
+  box-shadow: 13px 15px 7px rgba(42, 27, 16, .2);
+  transform: rotate(-5deg);
+}
+.most-read-small-cover {
+  width: 86px;
+  height: 126px;
+  object-fit: cover;
+  box-shadow: 5px 7px 5px rgba(35, 25, 16, .14);
+}
+.publisher-genre-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 300px;
+  margin: 14px 0 22px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.publisher-genre-filter select { flex: 1; }
+
+/* Checkout and overlays use the same white surface as the rest of the site. */
+.cart-panel,
+.product-panel,
+.checkout-panel,
+.search-panel,
+.admin-overlay .form-panel { background: #ffffff !important; }
+.checkout-panel input,
+.checkout-panel select,
+.checkout-panel textarea,
+.delivery-field label { background: #ffffff !important; }
+.demo-notice,
+.payment-note { background: #fafafa !important; }

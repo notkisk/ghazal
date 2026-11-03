@@ -1,0 +1,17 @@
+/* Saved warm theme preset — rollback reference before the white refresh. */
+:root {
+  --sand: #e4d1ae;
+  --sand-light: #ecddc4;
+  --ivory: #f8f3e8;
+  --ink: #1b1915;
+  --muted: #6f6658;
+  --line: rgba(28, 25, 20, .24);
+  --brown: #8f5e3b;
+}
+
+body { background: var(--sand); }
+.site-header { background: var(--sand); }
+.marquee { background: #d7bd95; }
+.departments { background: #eee2ce; }
+.journal { background: #d6bc96; }
+.footer, .quote-band { background: var(--ink); }

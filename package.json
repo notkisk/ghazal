@@ -1,0 +1,13 @@
+{
+  "name": "ghazal-books",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "admin:reset": "node scripts/set-admin-password.js",
+    "backup": "node scripts/backup-db.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=22.5" }
+}
