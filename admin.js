@@ -37,7 +37,10 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&am
 // Cover paths are stored as short URLs (/covers/<hash>.jpg); legacy rows keep
 // bare filenames under assets/covers and old data URLs still render.
 const coverPath = value => { const source = String(value || '').trim(); if (!source) return ''; return source.startsWith('data:') || source.startsWith('/') || /^https?:\/\//i.test(source) ? source : `assets/covers/${source}`; };
-const bookCover = (book, size = 'thumb') => coverPath(size === 'thumb' ? (book?.thumb || book?.display || book?.image) : (book?.display || book?.image)) || 'assets/placeholder-cover.svg';
+const DEFAULT_COVER = 'assets/placeholder-cover.svg?v=20261103-2';
+const isDefaultCover = book => { const source = String(book?.thumb || book?.display || book?.image || '').trim(); return !source || source.includes('placeholder-cover.svg'); };
+const defaultCoverBooks = () => books.filter(isDefaultCover);
+const bookCover = (book, size = 'thumb') => coverPath(size === 'thumb' ? (book?.thumb || book?.display || book?.image) : (book?.display || book?.image)) || DEFAULT_COVER;
 let books = [];
 let featuredBookIds = read('ghazal.featuredBooks.v1', []);
 let publisherFeatures = read('ghazal.publisherFeatures.v1', []);
@@ -47,7 +50,10 @@ let genres = read('ghazal.genres.v1', {});
 const genreMatches = (book, selected) => selected === 'all' || normalizeArabicSearch(book.genre).includes(normalizeArabicSearch(selected));
 let bookGenres = [...new Set([...read('ghazal.bookGenres.v1', []), ...books.map(book => book.genre).filter(Boolean)])].sort((a,b) => a.localeCompare(b, 'ar'));
 let collections = read('ghazal.collections.v1', []);
-let orders = read('ghazal.demoOrders.v1', []);
+// Old demo-mode orders are not used when a server is running; clear any
+// leftover data so the admin never sees stale localStorage orders.
+localStorage.removeItem('ghazal.demoOrders.v1');
+let orders = [];
 let staffUsers = [];
 let auditEvents = [];
 let analytics = { booksSold:[], lowStock:[], newsletterSubscribers:0 };
@@ -64,6 +70,7 @@ let selectedOrderRefs = new Set();
 let expandedOrderRefs = new Set();
 let bookQuery = '';
 let bookStockFilter = 'all';
+let bookCoverFilter = 'all';
 let bookCategoryFilter = 'all';
 let bookShowAll = false;
 let bookPageSize = 10;
@@ -107,6 +114,11 @@ function ensureDashboardPanels() {
   if (actions && !actions.querySelector('[data-owner-form="discount"]')) { const button = document.createElement('button'); button.className = 'button button-outline'; button.type = 'button'; button.dataset.ownerForm = 'discount'; button.textContent = 'إضافة خصم'; actions.appendChild(button); button.addEventListener('click', () => openForm('discount')); }
   if (actions && !actions.querySelector('[data-owner-form="featured"]')) { const button = document.createElement('button'); button.className = 'button button-outline'; button.type = 'button'; button.dataset.ownerForm = 'featured'; button.textContent = 'تعديل المختارات'; actions.appendChild(button); button.addEventListener('click', () => openForm('featured')); }
   const tabs = $('.admin-tabs');
+  if (tabs && !tabs.querySelector('[data-owner-tab="missing-covers"]')) {
+    const coverTab = document.createElement('button'); coverTab.type = 'button'; coverTab.dataset.ownerTab = 'missing-covers'; coverTab.textContent = 'أغلفة ناقصة';
+    const booksTab = tabs.querySelector('[data-owner-tab="books"]'); booksTab ? booksTab.after(coverTab) : tabs.prepend(coverTab);
+    coverTab.addEventListener('click', () => openMissingCoversTab());
+  }
   if (tabs && !tabs.querySelector('[data-owner-tab="genres"]')) {
     const genreTab = document.createElement('button'); genreTab.type = 'button'; genreTab.dataset.ownerTab = 'genres'; genreTab.textContent = 'التصنيفات'; tabs.insertBefore(genreTab, tabs.querySelector('[data-owner-tab="orders"]'));
     genreTab.addEventListener('click', () => { ownerTab = 'genres'; $$('.admin-tabs button').forEach(item => item.classList.toggle('active', item === genreTab)); renderOwner(); });
@@ -126,6 +138,7 @@ function ensureDashboardPanels() {
   if (!$('#owner-extra-panels')) {
     $('#owner-app').insertAdjacentHTML('beforeend', `<section class="owner-dashboard-lower" id="owner-extra-panels"><article class="dashboard-card"><div class="card-heading"><div><p class="eyebrow">آخر الحركة</p><h2>أحدث <em>الطلبات</em></h2></div><button class="text-button" id="owner-see-orders" type="button">كل الطلبات ↙</button></div><div id="owner-recent-orders" class="owner-recent-orders"></div></article><article class="dashboard-card"><div class="card-heading"><div><p class="eyebrow">إشارات المتجر</p><h2>ما يحتاج <em>انتباهك</em></h2></div></div><div id="owner-store-insights" class="owner-store-insights"></div></article></section>`);
     $('#owner-see-orders').addEventListener('click', () => { ownerTab = 'orders'; $$('.admin-tabs button').forEach(item => item.classList.toggle('active', item.dataset.ownerTab === 'orders')); renderOwner(); });
+    $('#owner-store-insights').addEventListener('click', event => { if (event.target.closest('[data-cover-insight]')) openMissingCoversTab(); });
   }
 }
 function renderRecentOrders() {
@@ -136,7 +149,8 @@ function renderRecentOrders() {
 function renderStoreInsights() {
   const target = $('#owner-store-insights'); if (!target) return;
   const lowStock = analytics.lowStock || []; const best = (statsScope === 'all' ? (analytics.allBooksSold || analytics.booksSold) : analytics.booksSold || []).slice(0, 3); const scopeLabel = statsScope === 'all' ? 'كل الطلبات غير الملغاة' : 'الطلبات المؤكدة فقط';
-  target.innerHTML = `<div class="store-insight-block"><strong>${lowStock.length}</strong><span>${lowStock.length === 1 ? 'كتاب يحتاج إعادة تخزين' : 'كتب تحتاج إعادة تخزين'}</span>${lowStock.slice(0, 3).map(book => `<small>${esc(book.title)} · ${Number(book.available)} متاح</small>`).join('') || '<small>المخزون في وضع جيد.</small>'}</div><div class="store-insight-block"><strong>الأكثر طلبًا</strong><small>${scopeLabel}</small>${best.map((book, index) => `<small>${index + 1}. ${esc(book.title)} · ${Number(book.quantity)} نسخة</small>`).join('') || '<small>ستظهر البيانات بعد أولى الطلبات.</small>'}</div>`;
+  const missingCovers = defaultCoverBooks();
+  target.innerHTML = `<div class="store-insight-block"><strong>${lowStock.length}</strong><span>${lowStock.length === 1 ? 'كتاب يحتاج إعادة تخزين' : 'كتب تحتاج إعادة تخزين'}</span>${lowStock.slice(0, 3).map(book => `<small>${esc(book.title)} · ${Number(book.available)} متاح</small>`).join('') || '<small>المخزون في وضع جيد.</small>'}</div><div class="store-insight-block"><strong>الأكثر طلبًا</strong><small>${scopeLabel}</small>${best.map((book, index) => `<small>${index + 1}. ${esc(book.title)} · ${Number(book.quantity)} نسخة</small>`).join('') || '<small>ستظهر البيانات بعد أولى الطلبات.</small>'}</div><div class="store-insight-block store-insight-cover"><strong>${missingCovers.length}</strong><span>${missingCovers.length === 1 ? 'كتاب بغلاف افتراضي' : 'كتب بغلاف افتراضي'}</span>${missingCovers.slice(0, 3).map(book => `<small>${esc(book.title)} · ${esc(book.author)}</small>`).join('') || '<small>كل الكتب لديها أغلفة مخصصة.</small>'}${missingCovers.length ? '<button class="text-button" type="button" data-cover-insight>مراجعة الكتب بلا غلاف</button>' : ''}</div>`;
 }
 
 function filteredOrders() {
@@ -195,17 +209,32 @@ function renderOrderWorkspace() {
 let bookGenreFilter = 'all';
 function bookMatches(book) {
   const query = normalizeArabicSearch(bookQuery);
-  return (!query || normalizeArabicSearch(`${book.title} ${book.author} ${book.publisher}`).includes(query)) && (bookStockFilter === 'all' || (bookStockFilter === 'available' ? Number(book.stock) > 0 : Number(book.stock) <= 0)) && (bookCategoryFilter === 'all' || book.category === bookCategoryFilter) && genreMatches(book, bookGenreFilter);
+  return (!query || normalizeArabicSearch(`${book.title} ${book.author} ${book.publisher}`).includes(query)) && (bookStockFilter === 'all' || (bookStockFilter === 'available' ? Number(book.stock) > 0 : Number(book.stock) <= 0)) && (bookCoverFilter === 'all' || (bookCoverFilter === 'default' ? isDefaultCover(book) : !isDefaultCover(book))) && (bookCategoryFilter === 'all' || book.category === bookCategoryFilter) && genreMatches(book, bookGenreFilter);
+}
+function syncCoverTabLabel() {
+  const tab = $('[data-owner-tab="missing-covers"]'); if (!tab) return;
+  const count = defaultCoverBooks().length;
+  tab.textContent = count ? `أغلفة ناقصة (${count})` : 'أغلفة ناقصة';
+  tab.classList.toggle('has-missing-covers', count > 0);
+}
+function openMissingCoversTab() {
+  ownerTab = 'missing-covers';
+  $$('.admin-tabs button').forEach(item => item.classList.toggle('active', item.dataset.ownerTab === 'missing-covers'));
+  renderWorkspaceImmediately(); renderOwner();
 }
 function renderBooksWorkspace() {
   const list = $('#owner-list');
   const filtered = books.filter(bookMatches);
   const totalPages = Math.max(1, Math.ceil(filtered.length / bookPageSize)); bookPage = Math.min(bookPage, totalPages); const start = (bookPage - 1) * bookPageSize; const shown = filtered.slice(start, start + bookPageSize);
-  list.innerHTML = `<div class="book-workspace-toolbar"><label class="admin-search"><span>⌕</span><input id="owner-book-search" type="search" value="${esc(bookQuery)}" placeholder="ابحث بالعنوان أو المؤلف أو الناشر" /></label><select id="owner-book-stock"><option value="all" ${bookStockFilter === 'all' ? 'selected' : ''}>كل حالات المخزون</option><option value="available" ${bookStockFilter === 'available' ? 'selected' : ''}>متوفر</option><option value="empty" ${bookStockFilter === 'empty' ? 'selected' : ''}>غير متوفر</option></select><select id="owner-book-category"><option value="all">كل التصنيفات</option>${Object.entries(genres).map(([id, genre]) => `<option value="${esc(id)}" ${bookCategoryFilter === id ? 'selected' : ''}>${esc(genre.title)}</option>`).join('')}</select><select id="owner-book-genre"><option value="all">كل أنواع الكتب</option>${bookGenres.map(genre => `<option value="${esc(genre)}" ${bookGenreFilter === genre ? 'selected' : ''}>${esc(genre)}</option>`).join('')}</select><label class="book-page-size">كتب في الصفحة<select id="owner-book-page-size">${[10,25,50,100].map(size => `<option value="${size}" ${bookPageSize === size ? 'selected' : ''}>${size}</option>`).join('')}</select></label><button class="button button-outline" type="button" data-open-bulk-books>استيراد جماعي</button>${read('ghazal.lastImport.v1', null) ? '<button class="text-button" type="button" data-undo-import>تراجع عن آخر استيراد</button>' : ''}</div><div class="book-workspace-summary"><strong>${filtered.length ? `${start + 1}–${Math.min(start + shown.length, filtered.length)}` : '0'} من ${filtered.length}</strong> كتاب · ${books.length} إجمالًا · ${books.filter(book => Number(book.stock) > 0).length} متوفر</div><div class="book-admin-list">${shown.length ? shown.slice().reverse().map(book => `<article class="book-admin-card"><img src="${bookCover(book)}" alt="غلاف ${esc(book.title)}" /><div class="book-admin-main"><strong>${esc(book.title)}</strong><small>${esc(book.author)} · ${esc(book.publisher)}</small><p>${esc(book.review || book.note || 'لا توجد مراجعة قصيرة بعد.')}</p></div><div class="book-admin-price"><b>${money(book.price)}</b><span class="${Number(book.stock) > 0 ? 'stock-ok' : 'stock-off'}">${Number(book.stock) > 0 ? `${Number(book.stock)} نسخة` : 'غير متوفر'}</span><button class="text-button" type="button" data-edit-book="${esc(book.id)}">تعديل</button><button class="text-button danger-action" type="button" data-delete-book="${esc(book.id)}">حذف</button></div></article>`).join('') : '<p class="owner-note">لا توجد كتب تطابق البحث الحالي.</p>'}</div>${totalPages > 1 ? `<nav class="book-pagination" aria-label="صفحات الكتب"><button class="button button-outline" type="button" data-books-page="${bookPage - 1}" ${bookPage === 1 ? 'disabled' : ''}>السابق</button><span>صفحة ${bookPage} من ${totalPages}</span><button class="button button-outline" type="button" data-books-page="${bookPage + 1}" ${bookPage === totalPages ? 'disabled' : ''}>التالي</button></nav>` : ''}`;
+  list.innerHTML = `<div class="book-workspace-toolbar"><label class="admin-search"><span>⌕</span><input id="owner-book-search" type="search" value="${esc(bookQuery)}" placeholder="ابحث بالعنوان أو المؤلف أو الناشر" /></label><select id="owner-book-stock"><option value="all" ${bookStockFilter === 'all' ? 'selected' : ''}>كل حالات المخزون</option><option value="available" ${bookStockFilter === 'available' ? 'selected' : ''}>متوفر</option><option value="empty" ${bookStockFilter === 'empty' ? 'selected' : ''}>غير متوفر</option></select><select id="owner-book-cover"><option value="all" ${bookCoverFilter === 'all' ? 'selected' : ''}>كل الأغلفة</option><option value="default" ${bookCoverFilter === 'default' ? 'selected' : ''}>غلاف افتراضي فقط</option><option value="set" ${bookCoverFilter === 'set' ? 'selected' : ''}>غلاف مخصص فقط</option></select><select id="owner-book-category"><option value="all">كل التصنيفات</option>${Object.entries(genres).map(([id, genre]) => `<option value="${esc(id)}" ${bookCategoryFilter === id ? 'selected' : ''}>${esc(genre.title)}</option>`).join('')}</select><select id="owner-book-genre"><option value="all">كل أنواع الكتب</option>${bookGenres.map(genre => `<option value="${esc(genre)}" ${bookGenreFilter === genre ? 'selected' : ''}>${esc(genre)}</option>`).join('')}</select><label class="book-page-size">كتب في الصفحة<select id="owner-book-page-size">${[10,25,50,100].map(size => `<option value="${size}" ${bookPageSize === size ? 'selected' : ''}>${size}</option>`).join('')}</select></label><button class="button button-outline" type="button" data-open-bulk-books>استيراد جماعي</button>${read('ghazal.lastImport.v1', null) ? '<button class="text-button" type="button" data-undo-import>تراجع عن آخر استيراد</button>' : ''}</div><div class="book-workspace-summary"><strong>${filtered.length ? `${start + 1}–${Math.min(start + shown.length, filtered.length)}` : '0'} من ${filtered.length}</strong> كتاب · ${books.length} إجمالًا · ${books.filter(book => Number(book.stock) > 0).length} متوفر${defaultCoverBooks().length ? ` · <button class="text-button cover-missing-link" type="button" data-book-cover-filter="default">${defaultCoverBooks().length} بغلاف افتراضي</button>` : ''}</div><div class="book-admin-list">${shown.length ? shown.slice().reverse().map(book => `<article class="book-admin-card"><img src="${bookCover(book)}" alt="غلاف ${esc(book.title)}" /><div class="book-admin-main"><strong>${esc(book.title)}</strong><small>${esc(book.author)} · ${esc(book.publisher)}</small>${isDefaultCover(book) ? '<span class="cover-missing-badge">غلاف افتراضي</span>' : ''}<p>${esc(book.review || book.note || 'لا توجد مراجعة قصيرة بعد.')}</p></div><div class="book-admin-price"><b>${money(book.price)}</b><span class="${Number(book.stock) > 0 ? 'stock-ok' : 'stock-off'}">${Number(book.stock) > 0 ? `${Number(book.stock)} نسخة` : 'غير متوفر'}</span><button class="text-button" type="button" data-edit-book="${esc(book.id)}">تعديل</button><button class="text-button danger-action" type="button" data-delete-book="${esc(book.id)}">حذف</button></div></article>`).join('') : '<p class="owner-note">لا توجد كتب تطابق البحث الحالي.</p>'}</div>${totalPages > 1 ? `<nav class="book-pagination" aria-label="صفحات الكتب"><button class="button button-outline" type="button" data-books-page="${bookPage - 1}" ${bookPage === 1 ? 'disabled' : ''}>السابق</button><span>صفحة ${bookPage} من ${totalPages}</span><button class="button button-outline" type="button" data-books-page="${bookPage + 1}" ${bookPage === totalPages ? 'disabled' : ''}>التالي</button></nav>` : ''}`;
   list.querySelector('.book-workspace-toolbar .admin-search')?.remove();
   const persistentSearch = $('#owner-book-search'); if (persistentSearch) persistentSearch.value = bookQuery;
 }
-async function deleteBook(bookId) { const book = books.find(item => item.id === bookId); if (!book || !window.confirm(`حذف «${book.title}» نهائيًا؟`)) return; try { await window.GhazalAPI.deleteBook(sessionStorage.getItem(ADMIN_SESSION_KEY), bookId); const current = read('ghazal.customBooks.v1', []); save('ghazal.customBooks.v1', current.filter(item => item.id !== bookId)); alert('تم حذف الكتاب.'); location.reload(); } catch (error) { alert(error.message.includes('book_has_orders') ? 'لا يمكن حذف كتاب مرتبط بطلب. يمكنك جعله غير متوفر بدلًا من ذلك.' : 'تعذر حذف الكتاب.'); } }
+function renderMissingCoversWorkspace() {
+  const list = $('#owner-list');
+  const missing = defaultCoverBooks();
+  list.innerHTML = `<div class="missing-cover-head"><p class="eyebrow">الغلاف الافتراضي</p><h3>كتب <em>بلا غلاف</em></h3><p>${missing.length ? `${missing.length} كتاب يستخدم الغلاف الافتراضي. قد يكون تنزيل الغلاف فشل أو لم يُضف بعد. عدّل الكتاب لإضافة غلافه.` : 'كل الكتب لديها أغلفة مخصصة.'}</p>${missing.length ? `<div class="missing-cover-actions"><button class="button button-outline" type="button" data-cover-filter-books>عرضها في قائمة الكتب</button><button class="button button-dark" type="button" data-open-bulk-books>إعادة استيراد الأغلفة</button></div>` : ''}</div><div class="missing-cover-list">${missing.length ? missing.map(book => `<article class="missing-cover-card"><img src="${bookCover(book)}" alt="غلاف افتراضي لـ ${esc(book.title)}" /><div class="missing-cover-main"><strong>${esc(book.title)}</strong><small>${esc(book.author)} · ${esc(book.publisher)}</small><span>${esc(book.category || '')}${book.genre ? ` / ${esc(book.genre)}` : ''}</span><em>${Number(book.stock) > 0 ? `${Number(book.stock)} نسخة متوفرة` : 'غير متوفر'}</em></div><div class="missing-cover-actions"><button class="text-button" type="button" data-edit-book="${esc(book.id)}">إضافة غلاف / تعديل</button><button class="text-button danger-action" type="button" data-delete-book="${esc(book.id)}">حذف</button></div></article>`).join('') : '<div class="empty-cover-state">كل الكتب لديها أغلفة مخصصة.</div>'}</div>`;
+}
 async function deleteBook(bookId) { const book = books.find(item => String(item.id) === String(bookId)); if (!book || !window.confirm(`حذف «${book.title}» نهائيًا؟`)) return; try { await window.GhazalAPI.deleteBook(sessionStorage.getItem(ADMIN_SESSION_KEY), bookId); } catch (error) { const code = String(error?.message || ''); if (!code.includes('not_found')) { alert(code.includes('book_has_orders') ? 'لا يمكن حذف كتاب مرتبط بطلبات سابقة. يمكنك جعله غير متوفر بدلًا من حذفه.' : code.includes('permission_denied') || code.includes('owner_only') ? 'حذف الكتب متاح للمالك فقط.' : `تعذر حذف الكتاب: ${code || 'خطأ غير معروف'}`); return; } } const current = read('ghazal.customBooks.v1', []); save('ghazal.customBooks.v1', current.filter(item => String(item.id) !== String(bookId))); books = books.filter(item => String(item.id) !== String(bookId)); refreshGenresFromBooks(); save('ghazal.genres.v1', genres); save('ghazal.bookGenres.v1', bookGenres); alert('تم حذف الكتاب.'); renderBooksWorkspace(); }
 function undoLastImport() { const last = read('ghazal.lastImport.v1', null); if (!last) return; if (!window.confirm('التراجع عن آخر استيراد؟')) return; save('ghazal.customBooks.v1', last.before || []); localStorage.removeItem('ghazal.lastImport.v1'); location.reload(); }
 function renderDiscountWorkspace() {
@@ -271,6 +300,7 @@ function renderWorkspaceImmediately() {
   const list = $('#owner-list'); if (!list) return;
   try {
     if (ownerTab === 'books') renderBooksWorkspace();
+  if (ownerTab === 'missing-covers') renderMissingCoversWorkspace();
     if (ownerTab === 'publishers') list.innerHTML = publishers.map(publisher => `<div class="admin-row"><span class="admin-avatar">${esc(publisher.logo || publisher.name.slice(0,1))}</span><div><strong>${esc(publisher.name)}</strong><small>${esc(publisher.city || '')}</small></div><span>نشط</span></div>`).join('');
     if (ownerTab === 'authors') list.innerHTML = [...new Set(books.map(book => book.author))].map(author => `<div class="admin-row"><span class="admin-avatar">${esc(author.slice(0,1))}</span><div><strong>${esc(author)}</strong><small>${books.filter(book => book.author === author).length} كتب</small></div><span>كاتب</span></div>`).join('');
     if (ownerTab === 'genres') list.innerHTML = Object.entries(genres).map(([id, genre]) => `<div class="admin-row"><span class="admin-avatar">✦</span><div><strong>${esc(genre.title)}</strong><small>#genre/${esc(id)}</small></div><span class="admin-row-end"><span>${books.filter(book => book.category === id).length} كتب</span><button class="text-button admin-remove" type="button" data-remove-genre="${esc(id)}">حذف</button></span></div>`).join('');
@@ -302,6 +332,7 @@ async function renderOwner() {
   try { const remote = await window.GhazalAPI.adminOrders(sessionStorage.getItem(ADMIN_SESSION_KEY)); orders = remote.orders || []; } catch (error) { console.error('admin_orders_load_failed', error); if (String(error.message).includes('unauthorized') || String(error.message).includes('request_failed_401')) { sessionStorage.removeItem(ADMIN_SESSION_KEY); $('#owner-login').hidden = false; $('#owner-app').hidden = true; return; } }
   try { analytics = await window.GhazalAPI.adminAnalytics(sessionStorage.getItem(ADMIN_SESSION_KEY)); } catch (error) { console.error('admin_analytics_load_failed', error); }
   if (!window.__ghazalAdminCatalogLoaded) { try { applyAdminCatalog(await window.GhazalAPI.adminCatalog(sessionStorage.getItem(ADMIN_SESSION_KEY))); window.__ghazalAdminCatalogLoaded = true; } catch (error) { console.error('admin_catalog_load_failed', error); } }
+  syncCoverTabLabel();
   if (!collectionsLoaded) { try { const remoteCollections = await window.GhazalAPI.adminCollections(sessionStorage.getItem(ADMIN_SESSION_KEY)); if (remoteCollections.collections?.length) { collections = remoteCollections.collections; save('ghazal.collections.v1', collections); } collectionsLoaded = true; } catch { collectionsLoaded = true; } }
   document.body.dataset.role = sessionStorage.getItem('ghazal.adminRole') || 'admin'; if ($('#owner-role-badge')) $('#owner-role-badge').textContent = document.body.dataset.role === 'owner' ? 'المالك' : 'خدمة العملاء'; ensureDashboardPanels();
   updateOwnerStats();
@@ -311,6 +342,7 @@ async function renderOwner() {
   const list = $('#owner-list');
   try {
   if (ownerTab === 'books') renderBooksWorkspace();
+  if (ownerTab === 'missing-covers') renderMissingCoversWorkspace();
   if (ownerTab === 'publishers') list.innerHTML = publishers.map(publisher => `<div class="admin-row"><span class="admin-avatar">${publisher.logo?.startsWith('data:') ? `<img src="${publisher.logo}" alt="" />` : esc(publisher.logo || publisher.name.slice(0,1))}</span><div><strong>${esc(publisher.name)}</strong><small>${esc(publisher.city || '')}</small></div><span>نشط</span></div>`).join('');
   if (ownerTab === 'authors') list.innerHTML = [...new Set(books.map(book => book.author))].map(author => { const profile = authorProfiles[author]; return `<div class="admin-row"><span class="admin-avatar">${profile?.photo?.startsWith('data:') ? `<img src="${profile.photo}" alt="" />` : esc(author.slice(0,1))}</span><div><strong>${esc(author)}</strong><small>${books.filter(book => book.author === author).length} كتب ${profile ? '· ملف مضاف' : '· ملف اختياري'}</small></div><span>${profile?.featured ? 'مميز' : 'كاتب'}</span></div>`; }).join('');
   if (ownerTab === 'genres') list.innerHTML = Object.entries(genres).map(([id, genre]) => `<div class="admin-row"><span class="admin-avatar">✦</span><div><strong>${esc(genre.title)}</strong><small>#genre/${esc(id)} · ${esc(genre.description || '')}</small></div><span class="admin-row-end"><span>${books.filter(book => book.category === id).length} كتب</span><button class="text-button admin-remove" type="button" data-remove-genre="${esc(id)}">حذف</button></span></div>`).join('');
@@ -556,8 +588,13 @@ async function storeBookCover(value) {
   }
   if (/^https?:\/\//i.test(source)) {
     let saved;
-    try { saved = await window.GhazalAPI.saveCover(token, { url: source }); } catch { throw new Error('image_cache_failed'); }
-    if (!saved?.image) throw new Error('image_cache_failed');
+    try { saved = await window.GhazalAPI.saveCover(token, { url: source }); } catch {
+      // Server could not fetch the URL (blocked, rate-limited, etc.).
+      // Preserve the raw URL so the catalog still points somewhere valid
+      // and the background cacher can retry later.
+      return { image: source };
+    }
+    if (!saved?.image) return { image: source };
     // Some publishers block cross-origin reads, so the browser cannot build
     // derivatives before the upload. Read the stored copy back (same origin)
     // and upload the smaller sizes so shelves stay fast anyway.
@@ -575,6 +612,8 @@ async function storeBookCover(value) {
     } catch { /* The original still renders without derivatives. */ }
     return saved;
   }
+  // Unreachable for http sources (handled above); only hit for data: blobs
+  // that failed both the direct and server-side paths.
   throw new Error('image_cache_failed');
 }
 // Publisher logos and author photos are only shown at small sizes, so shrink
@@ -590,7 +629,7 @@ async function importMappedBooks() {
   importButton.disabled = true; importButton.textContent = 'جارٍ الاستيراد…';
   try {
   const missing = []; const imported = []; const coverFailures = [];
-  for (let rowIndex = 0; rowIndex < bulkBookRows.length; rowIndex += 1) { const row = bulkBookRows[rowIndex]; if (!row.some(value => String(value ?? '').trim() !== '')) continue; importButton.textContent = `جارٍ الاستيراد… ${rowIndex + 1}/${bulkBookRows.length}`; const values = Object.fromEntries(BULK_BOOK_FIELDS.map(field => [field.id, bulkValue(row, field)])); const requiredMissing = BULK_BOOK_FIELDS.filter(field => field.required && !values[field.id]); if (requiredMissing.length) { missing.push(rowIndex + 2); continue; } const price = importNumber(values.price); const stock = importNumber(values.stock, true); const pages = values.pages ? importNumber(values.pages, true) : null; const match = books.find(book => (values.isbn && book.isbn === values.isbn) || (book.title.trim().toLocaleLowerCase('ar') === values.title.trim().toLocaleLowerCase('ar') && book.author.trim().toLocaleLowerCase('ar') === values.author.trim().toLocaleLowerCase('ar'))); let cover = { image: match?.image || '', thumb: match?.thumb || '', display: match?.display || '' }; const coverSource = values.image || (String(match?.image || '').startsWith('data:') ? match.image : ''); if (coverSource) { try { const stored = await storeBookCover(coverSource); if (stored) cover = { image: stored.image || cover.image, thumb: stored.thumb || cover.thumb, display: stored.display || cover.display }; } catch { coverFailures.push(rowIndex + 2); } } imported.push({ ...(match || {}), id:match?.id || `book-${Date.now()}-${rowIndex}`, title:values.title, author:values.author, publisher:values.publisher, price, category:values.category || match?.category || 'غير مصنف', genre:values.genre || match?.genre || 'عام', review:values.review.slice(0, 1200), note:values.note || match?.note || '', stock, isbn:values.isbn || match?.isbn || '', ...(pages ? { pages } : {}), image:cover.image, ...(cover.thumb ? { thumb: cover.thumb } : {}), ...(cover.display ? { display: cover.display } : {}) }); }
+  for (let rowIndex = 0; rowIndex < bulkBookRows.length; rowIndex += 1) { const row = bulkBookRows[rowIndex]; if (!row.some(value => String(value ?? '').trim() !== '')) continue; importButton.textContent = `جارٍ الاستيراد… ${rowIndex + 1}/${bulkBookRows.length}`; const values = Object.fromEntries(BULK_BOOK_FIELDS.map(field => [field.id, bulkValue(row, field)])); const requiredMissing = BULK_BOOK_FIELDS.filter(field => field.required && !values[field.id]); if (requiredMissing.length) { missing.push(rowIndex + 2); continue; } const price = importNumber(values.price); const stock = importNumber(values.stock, true); const pages = values.pages ? importNumber(values.pages, true) : null; const match = books.find(book => (values.isbn && book.isbn === values.isbn) || (book.title.trim().toLocaleLowerCase('ar') === values.title.trim().toLocaleLowerCase('ar') && book.author.trim().toLocaleLowerCase('ar') === values.author.trim().toLocaleLowerCase('ar'))); let cover = { image: match?.image || '', thumb: match?.thumb || '', display: match?.display || '' }; const coverSource = values.image || (String(match?.image || '').startsWith('data:') ? match.image : ''); if (coverSource) { try { const stored = await storeBookCover(coverSource); if (stored) cover = { image: stored.image || cover.image, thumb: stored.thumb || cover.thumb, display: stored.display || cover.display }; } catch { coverFailures.push(rowIndex + 2); if (/^https?:\/\//i.test(coverSource)) cover.image = coverSource; } } imported.push({ ...(match || {}), id:match?.id || `book-${Date.now()}-${rowIndex}`, title:values.title, author:values.author, publisher:values.publisher, price, category:values.category || match?.category || 'غير مصنف', genre:values.genre || match?.genre || 'عام', review:values.review.slice(0, 1200), note:values.note || match?.note || '', stock, isbn:values.isbn || match?.isbn || '', ...(pages ? { pages } : {}), image:cover.image, ...(cover.thumb ? { thumb: cover.thumb } : {}), ...(cover.display ? { display: cover.display } : {}) }); }
   if (missing.length) { alert(`هناك صفوف ناقصة في الحقول الإلزامية: ${missing.slice(0, 8).join('، ')}${missing.length > 8 ? '…' : ''}`); return; }
   if (coverFailures.length) alert(`تم استيراد الكتب، لكن تعذّر تنزيل أغلفة ${coverFailures.length} صفًا (${coverFailures.slice(0, 8).join('، ')}${coverFailures.length > 8 ? '…' : ''}). سيبقى الغلاف السابق أو الافتراضي، ويمكنك إضافته لاحقًا من تعديل الكتاب.`);
   if (!imported.length) { alert('لم يتم العثور على صفوف كتب صالحة للاستيراد.'); return; }
@@ -696,6 +735,7 @@ $('#owner-export').addEventListener('click', exportOrders);
 $('#owner-list').addEventListener('click', event => {
   const ownerForm = event.target.closest('[data-owner-form]');
   if (ownerForm) { openForm(ownerForm.dataset.ownerForm); return; }
+  if (event.target.closest('[data-book-cover-filter],[data-cover-filter-books]')) { bookCoverFilter = 'default'; ownerTab = 'books'; bookPage = 1; $$('.admin-tabs button').forEach(item => item.classList.toggle('active', item.dataset.ownerTab === 'books')); renderWorkspaceImmediately(); renderOwner(); return; }
   if (event.target.closest('[data-retry-workspace]')) { renderOwner(); return; }
   const saveUser = event.target.closest('[data-save-user]');
   if (saveUser) { const card = saveUser.closest('[data-user-id]'); const permissions = Object.fromEntries([...card.querySelectorAll('[data-user-permission]')].map(input => [input.dataset.userPermission, input.checked])); const role = card.querySelector('[data-user-role]')?.value || 'admin'; window.GhazalAPI.updateStaff(sessionStorage.getItem(ADMIN_SESSION_KEY), card.dataset.userId, { role, permissions }).then(() => { alert('تم حفظ صلاحيات المستخدم.'); renderTeamWorkspace(); }).catch(error => alert(`تعذر حفظ الصلاحيات: ${error.message || 'خطأ غير معروف'}`)); return; }
@@ -751,6 +791,7 @@ $('#owner-list').addEventListener('change', event => {
   if (event.target.id === 'history-filter-employee') { historyEmployeeFilter = event.target.value; renderHistoryWorkspace(); return; }
   if (event.target.id === 'owner-book-search') { bookQuery = event.target.value; bookPage = 1; renderBooksWorkspace(); return; }
   if (event.target.id === 'owner-book-stock') { bookStockFilter = event.target.value; bookPage = 1; renderBooksWorkspace(); return; }
+  if (event.target.id === 'owner-book-cover') { bookCoverFilter = event.target.value; bookPage = 1; renderBooksWorkspace(); return; }
   if (event.target.id === 'owner-book-category') { bookCategoryFilter = event.target.value; bookPage = 1; renderBooksWorkspace(); return; }
   if (event.target.id === 'owner-book-genre') { bookGenreFilter = event.target.value; bookPage = 1; renderBooksWorkspace(); return; }
   if (event.target.id === 'owner-book-page-size') { bookPageSize = Number(event.target.value) || 10; bookPage = 1; renderBooksWorkspace(); return; }

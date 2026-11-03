@@ -28,6 +28,7 @@ window.GhazalAPI = (() => {
     saveCatalog: (token, catalog) => request('/api/admin/catalog', { method:'PUT', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(catalog) }),
     cacheImageUrl: (token, url) => request('/api/admin/cache-image', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ url }) }),
     saveCover: (token, cover) => request('/api/admin/covers', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(cover), timeout:30000 }),
+    cacheRemoteCovers: (token) => request('/api/admin/covers/cache-remote', { method:'POST', headers:{ authorization:`Bearer ${token}` } }),
     adminCollections: (token) => request('/api/admin/collections', { headers: { authorization: `Bearer ${token}` } }),
     createCollection: (token, collection) => request('/api/admin/collections', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(collection) }),
     updateCollection: (token, id, changes) => request(`/api/admin/collections/${encodeURIComponent(id)}`, { method:'PATCH', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(changes) }),

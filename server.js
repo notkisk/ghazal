@@ -105,7 +105,7 @@ function logError(source, error, details = {}) { try { db.prepare('INSERT INTO e
 const COVERS_DIR = process.env.GHAZAL_COVERS_DIR || path.join(DATA_DIR, 'covers');
 fs.mkdirSync(COVERS_DIR, { recursive: true });
 const MAX_COVER_BYTES = 8 * 1024 * 1024;
-const coverTypes = { jpg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif', avif:'image/avif' };
+const coverTypes = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif', avif:'image/avif', svg:'image/svg+xml' };
 function detectCoverType(bytes) {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpg';
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'png';
@@ -131,11 +131,27 @@ function decodeCoverData(value) {
 async function fetchCoverFile(address) {
   const url = String(address || '').trim();
   if (!/^https?:\/\//i.test(url)) throw new Error('invalid_image_url');
-  const response = await fetch(url, { redirect:'follow', signal:AbortSignal.timeout(12000), headers:{ 'user-agent':'Ghazal-Bookstore-Cover/1.0', accept:'image/*' } });
+  const response = await fetch(url, { redirect:'follow', signal:AbortSignal.timeout(15000), headers:{ 'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Ghazal-Bookstore-Cover/1.0', accept:'image/*' } });
   if (!response.ok) throw new Error('image_fetch_failed');
   const declared = Number(response.headers.get('content-length') || 0);
   if (declared > MAX_COVER_BYTES) throw new Error('cover_too_large');
   return storeCover(Buffer.from(await response.arrayBuffer()));
+}
+async function cacheRemoteCovers() {
+  const rows = db.prepare("SELECT id,image FROM books WHERE image LIKE 'http://%' OR image LIKE 'https://%'").all();
+  if (!rows.length) return 0;
+  const update = db.prepare('UPDATE books SET image=?,updated_at=? WHERE id=?');
+  let cached = 0;
+  for (const row of rows) {
+    try {
+      const stored = await fetchCoverFile(row.image);
+      update.run(stored, now(), row.id);
+      cached += 1;
+    } catch (error) {
+      console.warn(`remote_cover_cache_failed ${row.id}: ${error.message}`);
+    }
+  }
+  return cached;
 }
 function migrateEmbeddedCovers() {
   const rows = db.prepare("SELECT id,image FROM books WHERE image LIKE 'data:image/%'").all();
@@ -349,6 +365,11 @@ async function api(req, res, url) {
       else return send(res,400,{error:'invalid_cover'});
       return send(res,201, stored);
     }
+    if (req.method === 'POST' && url.pathname === '/api/admin/covers/cache-remote') {
+      const editor = requirePermission(req,res,'edit_catalog'); if (!editor) return;
+      const cached = await cacheRemoteCovers();
+      return send(res, 200, { ok:true, cached });
+    }
     if (req.method === 'POST' && url.pathname === '/api/admin/cache-image') { const viewer = requirePermission(req,res,'edit_catalog'); if (!viewer) return; const body = await readBody(req); const imageUrl = String(body.url || '').trim(); if (!/^https?:\/\//i.test(imageUrl)) return send(res,400,{error:'invalid_image_url'}); const response = await fetch(imageUrl, { redirect:'follow', signal:AbortSignal.timeout(12000), headers:{'user-agent':'Ghazal-Bookstore-Image-Cache/1.0'} }); if (!response.ok) return send(res,422,{error:'image_fetch_failed'}); const contentType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase(); if (!contentType.startsWith('image/')) return send(res,422,{error:'image_not_image'}); const bytes = new Uint8Array(await response.arrayBuffer()); if (bytes.length > 5 * 1024 * 1024) return send(res,413,{error:'image_too_large'}); return send(res,200,{data:`data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`}); }
     if (req.method === 'PUT' && url.pathname === '/api/admin/catalog') {
       if (!can(user,'edit_catalog')) return send(res,403,{error:'permission_denied',permission:'edit_catalog'});
@@ -374,7 +395,7 @@ async function api(req, res, url) {
         db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('genres',json(genresPayload),stamp);
         db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('bookGenres',json(bookGenresPayload),stamp);
         for (const key of ['discounts','featured','authorProfiles','publisherFeatures']) if (body[key] !== undefined) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run(key,json(body[key]),stamp);
-        audit(user,'update','catalog','store',{books:books.length,publishers:publishers.length}); db.exec('COMMIT'); return send(res,200,catalogPayload());
+        audit(user,'update','catalog','store',{books:books.length,publishers:publishers.length}); db.exec('COMMIT'); if (books.some(b => /^https?:\/\//i.test(b?.image || ''))) setTimeout(() => cacheRemoteCovers().catch(() => {}), 100); return send(res,200,catalogPayload());
       } catch (error) { db.exec('ROLLBACK'); throw error; }
     }
     if (req.method === 'GET' && url.pathname === '/api/admin/collections') return send(res, 200, { collections: collectionList(true) });
@@ -406,9 +427,9 @@ const staticServer = http.createServer(async (req,res) => {
     return fs.createReadStream(filePath).pipe(res);
   }
   let filePath = path.normalize(path.join(ROOT, url.pathname === '/' ? 'index.html' : url.pathname)); if (!filePath.startsWith(ROOT) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) filePath = path.join(ROOT,'index.html');
-  const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.xml':'application/xml; charset=utf-8', '.txt':'text/plain; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.avif':'image/avif', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+  const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.xml':'application/xml; charset=utf-8', '.txt':'text/plain; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.avif':'image/avif', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
   const isAsset = /\.(?:css|js|png|jpg|jpeg|webp|svg|ico|xlsx)$/i.test(filePath);
   res.writeHead(200, { 'content-type':types[path.extname(filePath)] || 'application/octet-stream', 'x-content-type-options':'nosniff', 'x-frame-options':'DENY', 'referrer-policy':'strict-origin-when-cross-origin', 'permissions-policy':'camera=(), microphone=(), geolocation=()', ...(isAsset ? {'cache-control':'public, max-age=86400'} : {'cache-control':'no-cache'}) }); fs.createReadStream(filePath).pipe(res);
 });
 if (require.main === module) staticServer.listen(Number(process.env.PORT || 3000), () => console.log(`Ghazal listening on http://localhost:${process.env.PORT || 3000}`));
-module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, storeCover, COVERS_DIR };
+module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, cacheRemoteCovers, storeCover, COVERS_DIR };

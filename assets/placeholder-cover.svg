@@ -1,6 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900" role="img" aria-label="غلاف كتاب">
-  <rect width="600" height="900" fill="#e7d8bd"/>
-  <rect x="34" y="34" width="532" height="832" fill="none" stroke="#8f5e3b" stroke-width="2"/>
-  <text x="300" y="430" text-anchor="middle" font-family="serif" font-size="64" fill="#8f5e3b">الغزال</text>
-  <text x="300" y="500" text-anchor="middle" font-family="serif" font-size="30" fill="#6f6658">للكتب</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900" role="img" aria-label="غلاف افتراضي — لا يوجد غلاف لهذا الكتاب" dir="rtl">
+  <rect width="600" height="900" fill="#efeae1"/>
+  <rect x="26" y="26" width="548" height="848" rx="8" fill="none" stroke="#b6a68d" stroke-width="3" stroke-dasharray="18 14"/>
+  <text x="300" y="96" text-anchor="middle" font-family="'Amiri', 'Traditional Arabic', serif" font-size="22" letter-spacing="6" fill="#a2917a">الغزال للكتب</text>
+  <g fill="none" stroke="#a2917a" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="190" y="270" width="220" height="170" rx="10"/>
+    <circle cx="250" cy="325" r="22"/>
+    <path d="M198 410 L268 344 L318 392 L348 366 L402 410"/>
+  </g>
+  <path d="M300 486 v60 M270 516 h60" stroke="#a2917a" stroke-width="7" stroke-linecap="round" opacity=".55"/>
+  <text x="300" y="640" text-anchor="middle" font-family="'Amiri', 'Traditional Arabic', serif" font-size="56" fill="#8f7d65">غلاف افتراضي</text>
+  <text x="300" y="694" text-anchor="middle" font-family="'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif" font-size="26" fill="#9a8a74">لا يوجد غلاف لهذا الكتاب</text>
+  <path d="M180 738 H420" stroke="#c8b9a2" stroke-width="2" stroke-dasharray="4 8"/>
+  <text x="300" y="788" text-anchor="middle" font-family="'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif" font-size="19" fill="#ab9b85">سيظهر الغلاف هنا عند إضافته</text>
+  <text x="300" y="822" text-anchor="middle" font-family="'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif" font-size="16" fill="#bdae98" letter-spacing="2">GHAZAL / DEFAULT COVER</text>
 </svg>
