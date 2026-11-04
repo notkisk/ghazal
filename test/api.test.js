@@ -298,6 +298,38 @@ test('startup text repair restores words corrupted by split UTF-8 chunks', () =>
   }
 });
 
+test('text repair merges duplicate publisher and author names without losing books', () => {
+  const stamp = new Date().toISOString();
+  const canonicalPublisher = 'دار النشر العربية';
+  const duplicatePublisher = 'دار النشر الع\uFFFD\uFFFDبية';
+  const canonicalAuthor = 'كاتب معروف';
+  const duplicateAuthor = 'كاتب مع\uFFFD\uFFFDوف';
+  db.prepare('INSERT INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?)').run(canonicalPublisher, '', '', 'د', stamp);
+  db.prepare('INSERT INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?)').run(duplicatePublisher, 'الجزائر', 'وصف الدار', 'د', stamp);
+  db.prepare('INSERT INTO authors (name,bio,photo,created_at) VALUES (?,?,?,?)').run(canonicalAuthor, '', null, stamp);
+  db.prepare('INSERT INTO authors (name,bio,photo,created_at) VALUES (?,?,?,?)').run(duplicateAuthor, 'سيرة الكاتب', null, stamp);
+  db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run('repair-merge', 'كتاب الدمج', duplicateAuthor, duplicatePublisher, 'literature', 'رواية', 1000, 1, '', stamp, stamp);
+  try {
+    assert.ok(repairCorruptedText() >= 1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM publishers WHERE name=?').get(canonicalPublisher).n, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM publishers WHERE name=?').get(duplicatePublisher).n, 0);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM authors WHERE name=?').get(canonicalAuthor).n, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM authors WHERE name=?').get(duplicateAuthor).n, 0);
+    const publisher = db.prepare('SELECT city,description FROM publishers WHERE name=?').get(canonicalPublisher);
+    assert.equal(publisher.city, 'الجزائر');
+    assert.equal(publisher.description, 'وصف الدار');
+    const author = db.prepare('SELECT bio FROM authors WHERE name=?').get(canonicalAuthor);
+    assert.equal(author.bio, 'سيرة الكاتب');
+    const book = db.prepare('SELECT author,publisher FROM books WHERE id=?').get('repair-merge');
+    assert.deepEqual({ ...book }, { author: canonicalAuthor, publisher: canonicalPublisher });
+    assert.equal(repairCorruptedText(), 0);
+  } finally {
+    db.prepare('DELETE FROM books WHERE id=?').run('repair-merge');
+    db.prepare('DELETE FROM publishers WHERE name=?').run(canonicalPublisher);
+    db.prepare('DELETE FROM authors WHERE name=?').run(canonicalAuthor);
+  }
+});
+
 test('catalog sync stores cover paths without embedded image data', async () => {
   const base = await listen();
   const id = 'cover-path-test';

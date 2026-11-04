@@ -173,6 +173,7 @@ function migrateEmbeddedCovers() {
 // ambiguous is left untouched.
 const TEXT_WORD = /[\p{L}\p{M}\uFFFD]+/gu;
 const REPLACEMENT_RUN = /\uFFFD+/g;
+const TEXT_REPAIR_VERSION = '2026-11-text-repair-1';
 const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function repairWord(word, vocabulary) {
   if (!word.includes('\uFFFD')) return word;
@@ -186,24 +187,78 @@ function repairString(value, vocabulary) {
 function repairValue(value, vocabulary) {
   if (typeof value === 'string') return repairString(value, vocabulary);
   if (Array.isArray(value)) return value.map(item => repairValue(item, vocabulary));
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [repairString(key, vocabulary), repairValue(item, vocabulary)]));
+  if (value && typeof value === 'object') {
+    // Repairing an object key can collide with an existing key (for example a
+    // corrupted genre key and its already-correct twin). Keep the original key
+    // in that case so neither value is silently discarded.
+    const entries = Object.entries(value).map(([key, item]) => ({ key, nextKey: repairString(key, vocabulary), item: repairValue(item, vocabulary) }));
+    const counts = new Map();
+    entries.forEach(entry => counts.set(entry.nextKey, (counts.get(entry.nextKey) || 0) + 1));
+    const result = {};
+    for (const entry of entries) {
+      const key = counts.get(entry.nextKey) > 1 && entry.key !== entry.nextKey ? entry.key : entry.nextKey;
+      result[key] = entry.item;
+    }
+    return result;
+  }
   return value;
+}
+// Names are UNIQUE in publishers/authors. If repairing a corrupted name lands
+// on a name that already exists, the two records are the same entity, so merge
+// the duplicate into the canonical row instead of failing the whole migration.
+const uniqueTextTables = {
+  publishers: {
+    columns: ['name','city','description','logo'],
+    mergeColumns: ['city','description','logo'],
+    mergeSql: "city=CASE WHEN TRIM(COALESCE(city,''))='' THEN ? ELSE city END, description=CASE WHEN TRIM(COALESCE(description,''))='' THEN ? ELSE description END, logo=COALESCE(logo, ?)",
+    references: [['books','publisher']]
+  },
+  authors: {
+    columns: ['name','bio','photo'],
+    mergeColumns: ['bio','photo'],
+    mergeSql: "bio=CASE WHEN TRIM(COALESCE(bio,''))='' THEN ? ELSE bio END, photo=COALESCE(photo, ?)",
+    references: [['books','author']]
+  }
+};
+function repairUniqueTextTable(table, config, vocabulary) {
+  const rows = db.prepare(`SELECT rowid AS rowid,${config.columns.join(',')} FROM ${table}`).all();
+  let repaired = 0;
+  for (const row of rows) {
+    const next = config.columns.map(column => repairString(row[column], vocabulary));
+    const nextName = next[0];
+    const oldName = String(row.name ?? '');
+    const target = nextName === oldName ? null : db.prepare(`SELECT rowid AS rowid FROM ${table} WHERE name=?`).get(nextName);
+    if (target && target.rowid !== row.rowid) {
+      const mergeValues = config.mergeColumns.map(column => next[config.columns.indexOf(column)]);
+      db.prepare(`UPDATE ${table} SET ${config.mergeSql} WHERE rowid=?`).run(...mergeValues, target.rowid);
+      for (const [refTable, refColumn] of config.references) db.prepare(`UPDATE ${refTable} SET ${refColumn}=? WHERE ${refColumn}=?`).run(nextName, oldName);
+      db.prepare(`DELETE FROM ${table} WHERE rowid=?`).run(row.rowid);
+      console.warn(`text_repair_merged ${table} ${JSON.stringify(oldName)} -> ${JSON.stringify(nextName)}`);
+      repaired += 1;
+      continue;
+    }
+    if (next.some((value, index) => value !== String(row[config.columns[index]] ?? ''))) {
+      db.prepare(`UPDATE ${table} SET ${config.columns.map(column => `${column}=?`).join(',')} WHERE rowid=?`).run(...next, row.rowid);
+      repaired += 1;
+    }
+  }
+  return repaired;
 }
 function repairCorruptedText() {
   const textTables = {
     books: ['title','author','publisher','category','genre','note'],
-    publishers: ['name','city','description'],
-    authors: ['name','bio'],
     collections: ['title','description']
   };
   const vocabulary = new Set();
   const collect = value => { for (const word of String(value ?? '').match(TEXT_WORD) || []) if (!word.includes('\uFFFD')) vocabulary.add(word); };
   const contentRows = db.prepare('SELECT key,value_json FROM store_content').all();
+  for (const [table, config] of Object.entries(uniqueTextTables)) for (const row of db.prepare(`SELECT ${config.columns.join(',')} FROM ${table}`).all()) for (const column of config.columns) collect(row[column]);
   for (const [table, columns] of Object.entries(textTables)) for (const row of db.prepare(`SELECT ${columns.join(',')} FROM ${table}`).all()) for (const column of columns) collect(row[column]);
   for (const row of contentRows) { try { const value = JSON.parse(row.value_json); const walk = item => { if (typeof item === 'string') collect(item); else if (Array.isArray(item)) item.forEach(walk); else if (item && typeof item === 'object') Object.entries(item).forEach(([key, child]) => { collect(key); walk(child); }); }; walk(value); } catch {} }
   let repaired = 0;
   db.exec('BEGIN IMMEDIATE');
   try {
+    for (const [table, config] of Object.entries(uniqueTextTables)) repaired += repairUniqueTextTable(table, config, vocabulary);
     for (const [table, columns] of Object.entries(textTables)) {
       const rows = db.prepare(`SELECT rowid AS rowid,${columns.join(',')} FROM ${table}`).all();
       const update = db.prepare(`UPDATE ${table} SET ${columns.map(column => `${column}=?`).join(',')} WHERE rowid=?`);
@@ -221,6 +276,13 @@ function repairCorruptedText() {
     }
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return repaired;
+}
+function repairCorruptedTextOnce() {
+  const row = db.prepare('SELECT value_json FROM store_content WHERE key=?').get('textRepair');
+  if (row && parse(row.value_json) === TEXT_REPAIR_VERSION) return 0;
+  const repaired = repairCorruptedText();
+  db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('textRepair', json(TEXT_REPAIR_VERSION), now());
   return repaired;
 }
 // One-time clean slate: the catalog is now built exclusively from uploaded
@@ -251,7 +313,7 @@ const configuredPassword = process.env.GHAZAL_ADMIN_PASSWORD;
 if (!db.prepare('SELECT 1 FROM users LIMIT 1').get() && configuredPassword) db.prepare('INSERT INTO users (email,password_hash,role,created_at) VALUES (?,?,?,?)').run(process.env.GHAZAL_ADMIN_EMAIL || 'owner@alghazal.local', passwordHash(configuredPassword), 'owner', now());
 const emptyContent = { genres:'{}', bookGenres:'[]', discounts:'[]', featured:'[]', authorProfiles:'{}', publisherFeatures:'[]' };
 for (const [key, value] of Object.entries(emptyContent)) if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get(key)) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run(key, value, now());
-if (repairCorruptedText()) console.log('Ghazal: repaired corrupted text left by older imports');
+if (repairCorruptedTextOnce()) console.log('Ghazal: repaired corrupted text left by older imports');
 // The clean-slate catalog migration removed the old in-code spotlight defaults.
 // Restore those four original designs once, from the values shipped before the
 // reset, without overwriting any spotlight configuration an owner has saved.
@@ -530,4 +592,4 @@ const staticServer = http.createServer(async (req,res) => {
   return useGzip ? source.pipe(zlib.createGzip({ level:zlib.constants.Z_BEST_SPEED })).pipe(res) : source.pipe(res);
 });
 if (require.main === module) staticServer.listen(Number(process.env.PORT || 3000), () => console.log(`Ghazal listening on http://localhost:${process.env.PORT || 3000}`));
-module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, cacheRemoteCovers, storeCover, COVERS_DIR };
+module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, repairCorruptedTextOnce, cacheRemoteCovers, storeCover, COVERS_DIR };
