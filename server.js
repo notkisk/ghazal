@@ -71,7 +71,10 @@ const passwordHash = (value, salt = crypto.randomBytes(16).toString('hex')) => `
 const passwordMatches = (value, stored) => { const [salt, expected] = String(stored).split(':'); if (!salt || !expected) return false; const actual = crypto.scryptSync(String(value), salt, 32).toString('hex'); return crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected)); };
 const send = (res, status, payload, headers = {}) => { const raw = Buffer.from(JSON.stringify(payload)); const gzip = Boolean(res._ghazalGzip) && raw.length > 1024; const body = gzip ? zlib.gzipSync(raw) : raw; res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...(gzip ? { 'content-encoding': 'gzip', vary: 'accept-encoding' } : {}), ...headers }); res.end(body); };
 const MAX_JSON_BODY_SIZE = 25 * 1024 * 1024;
-const readBody = (req) => new Promise((resolve, reject) => { let body = ''; let tooLarge = false; req.on('data', chunk => { if (tooLarge) return; body += chunk; if (Buffer.byteLength(body) > MAX_JSON_BODY_SIZE) { tooLarge = true; reject(new Error('request_too_large')); req.resume(); } }); req.on('end', () => { if (tooLarge) return; try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error('invalid_json')); } }); req.on('error', reject); });
+// Decode the request only after every byte has arrived. Calling toString() on
+// each chunk corrupts multi-byte UTF-8 characters (Arabic text especially) when
+// a character straddles a TCP chunk boundary, producing U+FFFD.
+const readBody = (req) => new Promise((resolve, reject) => { const chunks = []; let size = 0; let tooLarge = false; req.on('data', chunk => { if (tooLarge) return; chunks.push(chunk); size += chunk.length; if (size > MAX_JSON_BODY_SIZE) { tooLarge = true; reject(new Error('request_too_large')); req.resume(); } }); req.on('end', () => { if (tooLarge) return; try { const body = Buffer.concat(chunks).toString('utf8'); resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error('invalid_json')); } }); req.on('error', reject); });
 const headerToken = (req) => (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
 function userFromRequest(req) { const token = headerToken(req); if (!token) return null; return db.prepare(`SELECT users.* FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=? AND sessions.expires_at>?`).get(hash(token), now()) || null; }
 function requireRole(req, res, role = 'admin') { const user = userFromRequest(req); if (!user || (role === 'owner' && user.role !== 'owner')) { send(res, 401, { error: 'unauthorized' }); return null; } return user; }
@@ -162,6 +165,64 @@ function migrateEmbeddedCovers() {
   return migrated;
 }
 
+// Older uploads could corrupt a multi-byte character when a TCP chunk split it
+// in half, leaving runs of U+FFFD (�) inside otherwise valid Arabic words.
+// The original bytes are gone, so repair conservatively: if exactly one intact
+// word already used elsewhere in the catalog matches the corrupted word with
+// each U+FFFD run standing in for a single letter, use that word. Anything
+// ambiguous is left untouched.
+const TEXT_WORD = /[\p{L}\p{M}\uFFFD]+/gu;
+const REPLACEMENT_RUN = /\uFFFD+/g;
+const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function repairWord(word, vocabulary) {
+  if (!word.includes('\uFFFD')) return word;
+  const pattern = new RegExp(`^${word.split(REPLACEMENT_RUN).map(escapeRegExp).join('[\\p{L}\\p{M}]')}$`, 'u');
+  const matches = [...vocabulary].filter(candidate => pattern.test(candidate));
+  return matches.length === 1 ? matches[0] : word;
+}
+function repairString(value, vocabulary) {
+  return String(value ?? '').replace(TEXT_WORD, word => repairWord(word, vocabulary));
+}
+function repairValue(value, vocabulary) {
+  if (typeof value === 'string') return repairString(value, vocabulary);
+  if (Array.isArray(value)) return value.map(item => repairValue(item, vocabulary));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [repairString(key, vocabulary), repairValue(item, vocabulary)]));
+  return value;
+}
+function repairCorruptedText() {
+  const textTables = {
+    books: ['title','author','publisher','category','genre','note'],
+    publishers: ['name','city','description'],
+    authors: ['name','bio'],
+    collections: ['title','description']
+  };
+  const vocabulary = new Set();
+  const collect = value => { for (const word of String(value ?? '').match(TEXT_WORD) || []) if (!word.includes('\uFFFD')) vocabulary.add(word); };
+  const contentRows = db.prepare('SELECT key,value_json FROM store_content').all();
+  for (const [table, columns] of Object.entries(textTables)) for (const row of db.prepare(`SELECT ${columns.join(',')} FROM ${table}`).all()) for (const column of columns) collect(row[column]);
+  for (const row of contentRows) { try { const value = JSON.parse(row.value_json); const walk = item => { if (typeof item === 'string') collect(item); else if (Array.isArray(item)) item.forEach(walk); else if (item && typeof item === 'object') Object.entries(item).forEach(([key, child]) => { collect(key); walk(child); }); }; walk(value); } catch {} }
+  let repaired = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const [table, columns] of Object.entries(textTables)) {
+      const rows = db.prepare(`SELECT rowid AS rowid,${columns.join(',')} FROM ${table}`).all();
+      const update = db.prepare(`UPDATE ${table} SET ${columns.map(column => `${column}=?`).join(',')} WHERE rowid=?`);
+      for (const row of rows) {
+        const next = columns.map(column => repairString(row[column], vocabulary));
+        if (next.some((value, index) => value !== String(row[columns[index]] ?? ''))) { update.run(...next, row.rowid); repaired += 1; }
+      }
+    }
+    const updateContent = db.prepare('UPDATE store_content SET value_json=? WHERE key=?');
+    for (const row of contentRows) {
+      let value;
+      try { value = JSON.parse(row.value_json); } catch { continue; }
+      const next = JSON.stringify(repairValue(value, vocabulary));
+      if (next !== row.value_json) { updateContent.run(next, row.key); repaired += 1; }
+    }
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return repaired;
+}
 // One-time clean slate: the catalog is now built exclusively from uploaded
 // spreadsheets. The version key makes this safe to keep in the startup path —
 // after the first run it never touches imported books again.
@@ -190,6 +251,7 @@ const configuredPassword = process.env.GHAZAL_ADMIN_PASSWORD;
 if (!db.prepare('SELECT 1 FROM users LIMIT 1').get() && configuredPassword) db.prepare('INSERT INTO users (email,password_hash,role,created_at) VALUES (?,?,?,?)').run(process.env.GHAZAL_ADMIN_EMAIL || 'owner@alghazal.local', passwordHash(configuredPassword), 'owner', now());
 const emptyContent = { genres:'{}', bookGenres:'[]', discounts:'[]', featured:'[]', authorProfiles:'{}', publisherFeatures:'[]' };
 for (const [key, value] of Object.entries(emptyContent)) if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get(key)) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run(key, value, now());
+if (repairCorruptedText()) console.log('Ghazal: repaired corrupted text left by older imports');
 // The clean-slate catalog migration removed the old in-code spotlight defaults.
 // Restore those four original designs once, from the values shipped before the
 // reset, without overwriting any spotlight configuration an owner has saved.
@@ -468,4 +530,4 @@ const staticServer = http.createServer(async (req,res) => {
   return useGzip ? source.pipe(zlib.createGzip({ level:zlib.constants.Z_BEST_SPEED })).pipe(res) : source.pipe(res);
 });
 if (require.main === module) staticServer.listen(Number(process.env.PORT || 3000), () => console.log(`Ghazal listening on http://localhost:${process.env.PORT || 3000}`));
-module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, cacheRemoteCovers, storeCover, COVERS_DIR };
+module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, cacheRemoteCovers, storeCover, COVERS_DIR };

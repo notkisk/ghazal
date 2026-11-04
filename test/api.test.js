@@ -9,7 +9,7 @@ const zlib = require('node:zlib');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghazal-api-'));
 process.env.GHAZAL_DATA_DIR = dataDir;
 process.env.GHAZAL_ADMIN_PASSWORD = 'secret';
-const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, COVERS_DIR } = require('../server');
+const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, COVERS_DIR } = require('../server');
 
 // The production catalog now starts empty and is rebuilt from spreadsheets, so
 // the test suite seeds its own deterministic fixtures after the server boots.
@@ -192,6 +192,35 @@ test('catalog sync stores the optional page count without requiring it', async (
   }
 });
 
+test('request bodies split inside a multi-byte character keep the Arabic text intact', async () => {
+  const base = await listen();
+  const id = 'utf8-split-test';
+  try {
+    const token = await ownerToken(base);
+    const note = 'يبحث في أسباب التعاسة والسعادة ليعيش حياة أكثر رضًا.';
+    const body = Buffer.from(JSON.stringify({ books:[{ id, title:'كتاب الحروف', author:'كاتب', publisher:'ناشر', price:1000, stock:1, note }] }));
+    const marker = Buffer.from('أكثر');
+    const at = body.indexOf(marker);
+    assert.ok(at > 0);
+    // Split between the two bytes of "ث" so each chunk contains an incomplete
+    // UTF-8 sequence, which used to become two U+FFFD replacement characters.
+    const cut = at + 5;
+    const response = await new Promise((resolve, reject) => {
+      const request = http.request(`${base}/api/admin/catalog`, { method:'PUT', headers:{ 'content-type':'application/json', authorization:`Bearer ${token}`, 'content-length':body.length } }, res => {
+        const chunks = []; res.on('data', chunk => chunks.push(chunk)); res.on('end', () => resolve({ status:res.statusCode, body:Buffer.concat(chunks).toString('utf8') }));
+      });
+      request.on('error', reject);
+      request.write(body.subarray(0, cut));
+      setTimeout(() => request.end(body.subarray(cut)), 25);
+    });
+    assert.equal(response.status, 200);
+    assert.equal(catalogPayload().books.find(book => book.id === id).note, note);
+  } finally {
+    db.prepare('DELETE FROM books WHERE id=?').run(id);
+    await closeServer();
+  }
+});
+
 test('cover upload stores a deduplicated file and serves it immutably', async () => {
   const base = await listen();
   try {
@@ -254,6 +283,19 @@ test('embedded data-url covers migrate to files exactly once', () => {
   assert.ok(fs.existsSync(path.join(COVERS_DIR, path.basename(row.image))));
   assert.equal(migrateEmbeddedCovers(), 0);
   db.prepare('DELETE FROM books WHERE id=?').run(id);
+});
+
+test('startup text repair restores words corrupted by split UTF-8 chunks', () => {
+  const stamp = new Date().toISOString();
+  const insert = db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+  insert.run('repair-good', 'كتاب سليم', 'كاتب', 'ناشر', 'literature', 'رواية', 1000, 1, 'كتاب أكثر من رائع.', stamp, stamp);
+  insert.run('repair-bad', 'كتاب تالف', 'كاتب', 'ناشر', 'literature', 'رواية', 1000, 1, 'حياة أك\uFFFD\uFFFDر رضًا.', stamp, stamp);
+  try {
+    assert.ok(repairCorruptedText() >= 1);
+    assert.equal(db.prepare('SELECT note FROM books WHERE id=?').get('repair-bad').note, 'حياة أكثر رضًا.');
+  } finally {
+    db.prepare('DELETE FROM books WHERE id IN (?,?)').run('repair-good', 'repair-bad');
+  }
 });
 
 test('catalog sync stores cover paths without embedded image data', async () => {
