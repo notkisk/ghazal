@@ -314,22 +314,55 @@ if (!db.prepare('SELECT 1 FROM users LIMIT 1').get() && configuredPassword) db.p
 const emptyContent = { genres:'{}', bookGenres:'[]', discounts:'[]', featured:'[]', authorProfiles:'{}', publisherFeatures:'[]' };
 for (const [key, value] of Object.entries(emptyContent)) if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get(key)) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run(key, value, now());
 if (repairCorruptedTextOnce()) console.log('Ghazal: repaired corrupted text left by older imports');
+const DEFAULT_PUBLISHER_FEATURES = [
+  { id:'mada', publisher:'دار المدى', active:true, layoutVersion:3, logo:'assets/publishers/al-mada.png', slogan:'بيت الثقافة والإبداع', kicker:'أدبٌ وفكرٌ وفنون', description:'رفّ من الكتب التي تصنع ذائقة، وتترك أثرًا أبعد من الصفحة الأخيرة.', accent:'#e51c2a', surface:'#f4d8c8', ink:'#251b19', mark:'م' },
+  { id:'jamal', publisher:'منشورات الجمل', active:true, layoutVersion:3, logo:'assets/publishers/al-jamal.png', slogan:'أصواتٌ من العالم', kicker:'أصواتٌ لا تشبه سواها', description:'دار عريقة في الترجمة الأدبية والفلسفية، وكتب تمنح القارئ فرصة الإصغاء إلى أصوات مختلفة.', accent:'#bd1d2d', surface:'#e9d8b9', ink:'#271914', mark:'ج' },
+  { id:'arab-network', publisher:'الشبكة العربية للأبحاث والنشر', active:true, layoutVersion:3, logo:'assets/publishers/arab-network.png', slogan:'بوابتك نحو عالم المعرفة', kicker:'معرفةٌ عربيةٌ رصينة', description:'كتب الفكر والتاريخ والسياسة التي تمنح السؤال العربي مساحة أوسع.', accent:'#2e579a', surface:'#dbe8ef', ink:'#18243b', mark:'ش' },
+  { id:'rafidain', publisher:'دار الرافدين', active:true, layoutVersion:3, logo:'assets/publishers/al-rafidain.png', slogan:'من وادي الرافدين بدأت الكتابة والمدنية', kicker:'للكتاب العربي الجميل', description:'إصدارات تحمل حيوية المكتبة العربية، بين التراث والقراءة المعاصرة.', accent:'#20205e', surface:'#e5e1ee', ink:'#171735', mark:'ر' }
+];
+const GENERIC_PUBLISHER_FEATURE = { slogan:'', kicker:'إصدارات مختارة', description:'اكتشف كتب هذه الدار من رفوف الغزال.', accent:'#8f5e3b', surface:'#eee2ce', ink:'#1b1915' };
+function mergePublisherFeatureDesign(feature, design) {
+  const next = { ...feature, id:design.id, publisher:feature.publisher || design.publisher, logo:feature.logo || design.logo, layoutVersion:feature.layoutVersion || design.layoutVersion, active:feature.active === undefined ? true : feature.active };
+  for (const key of ['slogan','kicker','description','accent','surface','ink','mark']) {
+    const value = String(next[key] ?? '').trim();
+    const generic = key === 'mark' ? value === String(next.publisher || '').slice(0,1) : value === GENERIC_PUBLISHER_FEATURE[key];
+    if (!value || generic) next[key] = design[key];
+  }
+  return next;
+}
 // The clean-slate catalog migration removed the old in-code spotlight defaults.
 // Restore those four original designs once, from the values shipped before the
 // reset, without overwriting any spotlight configuration an owner has saved.
 if (!db.prepare("SELECT 1 FROM store_content WHERE key='publisherFeaturesRestored'").get()) {
   const saved = contentValue('publisherFeatures', []);
   if (!Array.isArray(saved) || !saved.length) {
-    const restored = [
-      { id:'mada', publisher:'دار المدى', active:true, layoutVersion:3, slogan:'بيت الثقافة والإبداع', kicker:'أدبٌ وفكرٌ وفنون', description:'رفّ من الكتب التي تصنع ذائقة، وتترك أثرًا أبعد من الصفحة الأخيرة.', accent:'#e51c2a', surface:'#f4d8c8', ink:'#251b19', mark:'م' },
-      { id:'jamal', publisher:'منشورات الجمل', active:true, slogan:'أصواتٌ من العالم', kicker:'أصواتٌ لا تشبه سواها', description:'دار عريقة في الترجمة الأدبية والفلسفية، وكتب تمنح القارئ فرصة الإصغاء إلى أصوات مختلفة.', accent:'#bd1d2d', surface:'#e9d8b9', ink:'#271914', mark:'ج' },
-      { id:'arab-network', publisher:'الشبكة العربية للأبحاث والنشر', active:true, slogan:'بوابتك نحو عالم المعرفة', kicker:'معرفةٌ عربيةٌ رصينة', description:'كتب الفكر والتاريخ والسياسة التي تمنح السؤال العربي مساحة أوسع.', accent:'#2e579a', surface:'#dbe8ef', ink:'#18243b', mark:'ش' },
-      { id:'rafidain', publisher:'دار الرافدين', active:true, slogan:'من وادي الرافدين بدأت الكتابة والمدنية', kicker:'للكتاب العربي الجميل', description:'إصدارات تحمل حيوية المكتبة العربية، بين التراث والقراءة المعاصرة.', accent:'#20205e', surface:'#e5e1ee', ink:'#171735', mark:'ر' }
-    ];
-    db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('publisherFeatures', json(restored), now());
+    db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('publisherFeatures', json(DEFAULT_PUBLISHER_FEATURES.map(feature => ({ ...feature }))), now());
   }
   db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('publisherFeaturesRestored', 'true', now());
 }
+// Older deployments created publisher features manually, so a known publisher
+// (for example منشورات الجمل) could end up with the generic placeholder design
+// instead of the designed logo, colours, and copy. Merge the shipped designs in
+// once, keeping any custom value an owner has already set.
+const PUBLISHER_FEATURE_DESIGN_VERSION = '2026-11-publisher-design-1';
+function syncPublisherFeatureDesigns() {
+  const marker = db.prepare("SELECT value_json FROM store_content WHERE key='publisherFeaturesDesign'").get();
+  if (marker && parse(marker.value_json) === PUBLISHER_FEATURE_DESIGN_VERSION) return 0;
+  const saved = contentValue('publisherFeatures', []);
+  const features = Array.isArray(saved) ? saved.map(feature => ({ ...feature })) : [];
+  let changed = 0;
+  for (const design of DEFAULT_PUBLISHER_FEATURES) {
+    let index = features.findIndex(feature => String(feature.publisher || '').trim() === design.publisher);
+    if (index < 0) index = features.findIndex(feature => feature.id === design.id);
+    if (index < 0) { features.push({ ...design }); changed += 1; continue; }
+    const next = mergePublisherFeatureDesign(features[index], design);
+    if (JSON.stringify(next) !== JSON.stringify(features[index])) { features[index] = next; changed += 1; }
+  }
+  if (changed) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('publisherFeatures', json(features), now());
+  db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('publisherFeaturesDesign', json(PUBLISHER_FEATURE_DESIGN_VERSION), now());
+  return changed;
+}
+if (syncPublisherFeatureDesigns()) console.log('Ghazal: restored the designed publisher feature sections');
 
 const migratedCovers = migrateEmbeddedCovers();
 if (migratedCovers) console.log(`Ghazal: migrated ${migratedCovers} embedded cover(s) to ${COVERS_DIR}`);
@@ -592,4 +625,4 @@ const staticServer = http.createServer(async (req,res) => {
   return useGzip ? source.pipe(zlib.createGzip({ level:zlib.constants.Z_BEST_SPEED })).pipe(res) : source.pipe(res);
 });
 if (require.main === module) staticServer.listen(Number(process.env.PORT || 3000), () => console.log(`Ghazal listening on http://localhost:${process.env.PORT || 3000}`));
-module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, repairCorruptedTextOnce, cacheRemoteCovers, storeCover, COVERS_DIR };
+module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, repairCorruptedTextOnce, syncPublisherFeatureDesigns, cacheRemoteCovers, storeCover, COVERS_DIR };

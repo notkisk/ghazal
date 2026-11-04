@@ -9,7 +9,7 @@ const zlib = require('node:zlib');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghazal-api-'));
 process.env.GHAZAL_DATA_DIR = dataDir;
 process.env.GHAZAL_ADMIN_PASSWORD = 'secret';
-const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, COVERS_DIR } = require('../server');
+const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, syncPublisherFeatureDesigns, COVERS_DIR } = require('../server');
 
 // The production catalog now starts empty and is rebuilt from spreadsheets, so
 // the test suite seeds its own deterministic fixtures after the server boots.
@@ -327,6 +327,43 @@ test('text repair merges duplicate publisher and author names without losing boo
     db.prepare('DELETE FROM books WHERE id=?').run('repair-merge');
     db.prepare('DELETE FROM publishers WHERE name=?').run(canonicalPublisher);
     db.prepare('DELETE FROM authors WHERE name=?').run(canonicalAuthor);
+  }
+});
+
+test('publisher feature designs are restored without overwriting custom values', () => {
+  const stamp = new Date().toISOString();
+  const original = db.prepare("SELECT value_json FROM store_content WHERE key='publisherFeatures'").get();
+  const originalMarker = db.prepare("SELECT value_json FROM store_content WHERE key='publisherFeaturesDesign'").get();
+  const write = value => db.prepare("INSERT INTO store_content (key,value_json,updated_at) VALUES ('publisherFeatures',?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at").run(JSON.stringify(value), stamp);
+  const genericJamal = { id:'jamal', publisher:'منشورات الجمل', active:true, mark:'م', slogan:'', kicker:'إصدارات مختارة', description:'اكتشف كتب هذه الدار من رفوف الغزال.', accent:'#8f5e3b', surface:'#eee2ce', ink:'#1b1915' };
+  const customNetwork = { id:'arab-network', publisher:'الشبكة العربية للأبحاث والنشر', active:false, mark:'ش', slogan:'شعار خاص', kicker:'نص خاص', description:'وصف خاص', accent:'#123456', surface:'#abcdef', ink:'#111111' };
+  write([genericJamal, customNetwork]);
+  db.prepare("DELETE FROM store_content WHERE key='publisherFeaturesDesign'").run();
+  try {
+    assert.ok(syncPublisherFeatureDesigns() >= 1);
+    const features = JSON.parse(db.prepare("SELECT value_json FROM store_content WHERE key='publisherFeatures'").get().value_json);
+    const jamal = features.find(feature => feature.publisher === 'منشورات الجمل');
+    assert.equal(jamal.id, 'jamal');
+    assert.equal(jamal.slogan, 'أصواتٌ من العالم');
+    assert.equal(jamal.kicker, 'أصواتٌ لا تشبه سواها');
+    assert.equal(jamal.mark, 'ج');
+    assert.equal(jamal.accent, '#bd1d2d');
+    assert.match(jamal.logo, /assets\/publishers\/al-jamal\.png$/);
+    const network = features.find(feature => feature.publisher === 'الشبكة العربية للأبحاث والنشر');
+    assert.equal(network.slogan, 'شعار خاص');
+    assert.equal(network.kicker, 'نص خاص');
+    assert.equal(network.description, 'وصف خاص');
+    assert.equal(network.accent, '#123456');
+    assert.equal(network.active, false);
+    assert.match(network.logo, /assets\/publishers\/arab-network\.png$/);
+    assert.ok(features.some(feature => feature.id === 'mada' && feature.logo === 'assets/publishers/al-mada.png'));
+    assert.ok(features.some(feature => feature.id === 'rafidain' && feature.logo === 'assets/publishers/al-rafidain.png'));
+    assert.equal(syncPublisherFeatureDesigns(), 0);
+  } finally {
+    if (original) write(JSON.parse(original.value_json));
+    else db.prepare("DELETE FROM store_content WHERE key='publisherFeatures'").run();
+    if (originalMarker) db.prepare("INSERT INTO store_content (key,value_json,updated_at) VALUES ('publisherFeaturesDesign',?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at").run(originalMarker.value_json, stamp);
+    else db.prepare("DELETE FROM store_content WHERE key='publisherFeaturesDesign'").run();
   }
 });
 
