@@ -80,8 +80,9 @@ function applyCatalogPayload(payload) {
   renderCategoryUI(); renderDepartmentLinks(); renderPublisherGrid(); renderHeroArt(); renderBooks();
   renderFeaturedSelections(); renderHomeShelves(); renderFeaturedPublishers();
   if (location.hash === '#catalog') renderCatalogPage();
-  if (location.hash.startsWith('#genre/')) showRoute();
-  if (location.hash.startsWith('#collection/')) showRoute();
+  // Routes rendered before the asynchronous catalog response have no data.
+  // Re-render all catalog-backed pages once the server payload arrives.
+  if (['#departments', '#publishers'].includes(location.hash) || /^#(genre|collection|publisher|book|author)\//.test(location.hash)) showRoute();
 }
 function renderHeroArt() {
   const art = document.getElementById('hero-art'); if (!art) return;

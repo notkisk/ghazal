@@ -382,6 +382,10 @@ async function api(req, res, url) {
         // truth. Existing descriptions survive when the name is unchanged.
         const dbBooks = db.prepare('SELECT author,publisher,category,genre FROM books').all();
         const derivedPublishers = [...new Set(dbBooks.map(book => String(book.publisher || '').trim()).filter(Boolean))];
+        // Keep the publisher directory aligned with the catalog. Empty
+        // publishers are removable from the dashboard; deleting them here
+        // makes that change durable instead of reappearing on the next load.
+        db.prepare('DELETE FROM publishers WHERE name NOT IN (SELECT DISTINCT publisher FROM books)').run();
         const publisherInsert = db.prepare('INSERT OR IGNORE INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?)');
         derivedPublishers.forEach(name => publisherInsert.run(name,'','إصدارات من هذا الناشر.',name.slice(0,1),stamp));
         const publisherUpsert = db.prepare('INSERT INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET city=excluded.city,description=excluded.description,logo=excluded.logo');
