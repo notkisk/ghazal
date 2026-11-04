@@ -298,7 +298,7 @@ $('#search-open').addEventListener('click', () => showOverlay('search-overlay'))
 $('#cart-open').addEventListener('click', () => showOverlay('cart-overlay'));
 $$('[data-close]').forEach(button => button.addEventListener('click', () => hideOverlay(button.dataset.close)));
 $$('.overlay').forEach(overlay => overlay.addEventListener('click', event => { if (event.target === overlay) hideOverlay(overlay.id); }));
-document.addEventListener('keydown', event => { if (event.key === 'Escape') $$('.overlay:not([hidden])').forEach(overlay => hideOverlay(overlay.id)); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape') { $$('.overlay:not([hidden])').forEach(overlay => hideOverlay(overlay.id)); if (document.getElementById('cover-zoom-overlay')) { document.getElementById('cover-zoom-overlay').remove(); document.body.classList.remove('cover-zoom-open'); } } });
 
 document.body.insertAdjacentHTML('beforeend', '<div id="site-toast" class="site-toast" role="status" aria-live="polite"></div>');
 function toast(message) {
@@ -399,6 +399,7 @@ function flyBookToCart(button) {
   setTimeout(() => clone.remove(), (duration + .12) * 1000);
 }
 document.addEventListener('click', event => {
+  const zoom = event.target.closest('[data-zoom-cover]'); if (zoom) { openCoverZoom(zoom); return; }
   const view = event.target.closest('[data-view]');
   const add = event.target.closest('[data-add]');
   const favorite = event.target.closest('[data-favorite]');
@@ -699,7 +700,7 @@ function relatedBooks(book) {
 }
 function renderBookPage(id) {
   const book = byId[id];
-  if (!book) { location.hash = '#catalog'; return; }
+  if (!book) { if (catalogLoaded) location.hash = '#catalog'; return; }
   const suggestions = relatedBooks(book);
   const publisherShelf = publisherBooks(book.publisher).filter(item => item.id !== book.id);
   const authorShelf = authorBooks(book.author).filter(item => item.id !== book.id);
@@ -707,13 +708,20 @@ function renderBookPage(id) {
   const authorSection = authorShelf.length >= 3 ? `<section class="related-books book-detail-shelf"><div class="section-heading compact"><div><p class="eyebrow">قراءة أخرى من المؤلف</p><h2>كتب أخرى لـ <em>${escapeHtml(book.author)}</em></h2></div><a class="underlined-link" href="#author/${encodeURIComponent(book.author)}">ملف المؤلف <span>↖</span></a></div><div id="author-books-carousel"></div></section>` : '';
   const suggestionsSection = `<section class="related-books"><div class="section-heading compact"><div><p class="eyebrow">اقتراحات ذكية من رفوف الغزال</p><h2>قد يعجبك <em>أيضًا</em></h2></div><a class="underlined-link" href="#catalog">استكشف كل الكتب <span>↖</span></a></div><div id="related-books-carousel"></div></section>`;
   const available = Number(book.stock) > 0;
-  $('#book-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="book-detail"><div class="book-detail-cover"><img src="${coverUrl(book, 'display')}" alt="غلاف ${escapeHtml(book.title)}" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /></div><div class="book-detail-copy"><p class="eyebrow">${escapeHtml(book.genre)} / صفحة الكتاب</p><h1 id="book-page-title">${escapeHtml(book.title)}</h1><p class="detail-author">بقلم <a href="#author/${encodeURIComponent(book.author)}">${escapeHtml(book.author)}</a> · <a href="#publisher/${encodeURIComponent(book.publisher)}">${escapeHtml(book.publisher)}</a></p><p class="detail-note">${escapeHtml(book.note)}</p><div class="detail-meta"><div><span>التصنيف الفرعي</span><strong>${escapeHtml(book.genre)}</strong></div><div><span>المؤلف</span><strong>${escapeHtml(book.author)}</strong></div><div><span>السعر</span><strong>${money(book.price)}</strong></div><div><span>التوفر</span><strong>${available ? 'متوفر' : 'غير متوفر حاليًا'}</strong></div></div>${available ? `<button class="button button-dark" data-add="${book.id}">أضف إلى السلة <span>↖</span></button>` : '<p class="stock-empty detail-stock-empty">هذا الكتاب غير متوفر حاليًا.</p>'}</div></div>${suggestionsSection}${publisherSection}${authorSection}`;
+  $('#book-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="book-detail"><div class="book-detail-cover"><button class="book-cover-zoom" type="button" data-zoom-cover="${escapeHtml(coverPath(book.image || book.display) || coverUrl(book, 'display'))}" aria-label="تكبير غلاف ${escapeHtml(book.title)}"><img src="${coverUrl(book, 'display')}" alt="غلاف ${escapeHtml(book.title)}" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /><span>تكبير الغلاف <b aria-hidden="true">⌕</b></span></button></div><div class="book-detail-copy"><p class="eyebrow">${escapeHtml(book.genre)} / صفحة الكتاب</p><h1 id="book-page-title">${escapeHtml(book.title)}</h1><p class="detail-author">بقلم <a href="#author/${encodeURIComponent(book.author)}">${escapeHtml(book.author)}</a> · <a href="#publisher/${encodeURIComponent(book.publisher)}">${escapeHtml(book.publisher)}</a></p><p class="detail-note">${escapeHtml(book.note)}</p><div class="detail-meta"><div><span>التصنيف الفرعي</span><strong>${escapeHtml(book.genre)}</strong></div><div><span>المؤلف</span><strong>${escapeHtml(book.author)}</strong></div><div><span>السعر</span><strong>${money(book.price)}</strong></div><div><span>التوفر</span><strong>${available ? 'متوفر' : 'غير متوفر حاليًا'}</strong></div></div>${available ? `<button class="button button-dark" data-add="${book.id}">أضف إلى السلة <span>↖</span></button>` : '<p class="stock-empty detail-stock-empty">هذا الكتاب غير متوفر حاليًا.</p>'}</div></div>${suggestionsSection}${publisherSection}${authorSection}`;
   const detailPrice = $('#book-page-content .detail-meta div:nth-child(3) strong'); if (detailPrice) detailPrice.innerHTML = priceHtml(book);
   if (book.review) $('#book-page-content .detail-note').textContent = book.review;
   if (publisherShelf.length) renderCarousel('publisher-books-carousel', `publisher-${book.id}`, publisherShelf);
   if (authorShelf.length >= 3) renderCarousel('author-books-carousel', `author-${book.id}`, authorShelf);
   renderCarousel('related-books-carousel', `related-${book.id}`, suggestions);
   observeReveals();
+}
+function openCoverZoom(button) {
+  const src = button.dataset.zoomCover; if (!src) return;
+  document.getElementById('cover-zoom-overlay')?.remove();
+  const title = $('#book-page-title')?.textContent || 'غلاف الكتاب';
+  document.body.insertAdjacentHTML('beforeend', `<div class="cover-zoom-overlay" id="cover-zoom-overlay" role="dialog" aria-modal="true" aria-label="غلاف ${escapeHtml(title)}"><button class="cover-zoom-close" type="button" aria-label="إغلاق التكبير">×</button><figure><img src="${escapeHtml(src)}" alt="غلاف ${escapeHtml(title)}" /><figcaption>${escapeHtml(title)}<small>انقر خارج الغلاف أو اضغط Escape للإغلاق</small></figcaption></figure></div>`);
+  const overlay = $('#cover-zoom-overlay'); document.body.classList.add('cover-zoom-open'); overlay.addEventListener('click', event => { if (event.target === overlay || event.target.closest('.cover-zoom-close')) { overlay.remove(); document.body.classList.remove('cover-zoom-open'); } }); overlay.querySelector('.cover-zoom-close').focus();
 }
 function renderPublisherPage(name) {
   const publisher = publisherByName(name);
