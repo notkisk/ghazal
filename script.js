@@ -60,7 +60,7 @@ let publisherFeatures = readStorage('ghazal.publisherFeatures.v1', []);
 let bestSellerBookIds = [];
 let catalogBookGenres = [];
 let authorSpotlight = null;
-if (window.location.protocol !== 'file:') fetch('/api/collections').then(response => response.ok ? response.json() : null).then(payload => { if (payload?.collections?.length) { collections = payload.collections; if (document.readyState !== 'loading') { renderHomeShelves(); if (location.hash.startsWith('#collection/')) showRoute(); } } }).catch(() => {});
+let catalogLoaded = false;
 window.addEventListener('storage', event => { if (event.key === 'ghazal.customBooks.v1' || event.key === 'ghazal.customPublishers.v1' || event.key === 'ghazal.genres.v1' || event.key === 'ghazal.discounts.v1' || event.key === 'ghazal.collections.v1') location.reload(); });
 let discounts = readStorage('ghazal.discounts.v1', []);
 let activeDiscountCode = '';
@@ -77,11 +77,13 @@ function applyCatalogPayload(payload) {
   bestSellerBookIds = payload?.bestSellerBookIds || [];
   authorSpotlight = payload?.authorSpotlight || null;
   publisherFeatures = payload?.publisherFeatures || [];
+  catalogLoaded = true;
   renderCategoryUI(); renderDepartmentLinks(); renderPublisherGrid(); renderHeroArt(); renderBooks();
   renderFeaturedSelections(); renderHomeShelves(); renderFeaturedPublishers();
   if (location.hash === '#catalog') renderCatalogPage();
-  if (location.hash.startsWith('#genre/')) showRoute();
-  if (location.hash.startsWith('#collection/')) showRoute();
+  // Routes rendered before the asynchronous catalog response have no data.
+  // Re-render all catalog-backed pages once the server payload arrives.
+  if (['#departments', '#publishers'].includes(location.hash) || /^#(genre|collection|publisher|book|author)\//.test(location.hash)) showRoute();
 }
 function renderHeroArt() {
   const art = document.getElementById('hero-art'); if (!art) return;
@@ -90,7 +92,7 @@ function renderHeroArt() {
   slots.forEach((slot, index) => {
     const book = picks[index];
     slot.hidden = !book;
-    slot.innerHTML = book ? `<img class="edition-image hero-cover-image" data-view="${escapeHtml(book.id)}" src="${coverUrl(book, 'display')}" alt="غلاف ${escapeHtml(book.title)}"${index === 2 ? '' : ' loading="lazy"'} decoding="async" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" />` : '';
+    slot.innerHTML = book ? `<img class="edition-image hero-cover-image" data-view="${escapeHtml(book.id)}" src="${coverUrl(book, 'display')}" alt="غلاف ${escapeHtml(book.title)}"${index === 2 ? ' fetchpriority="high"' : ' loading="lazy"'} decoding="async" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" />` : '';
   });
   const note = art.querySelector('.hero-art-note');
   if (note) { note.hidden = !picks.length; const counter = note.querySelector('span'); if (counter) counter.textContent = `0${Math.min(picks.length, 3)} / 0${Math.max(picks.length, 3)}`; }
@@ -114,7 +116,7 @@ function renderPublisherGrid() {
   if (!section || !target) return;
   const list = publishers.filter(publisher => publisher && publisher.name).slice(0, 8);
   section.hidden = !list.length;
-  target.innerHTML = list.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${escapeHtml(publisher.logo || publisher.name.slice(0, 1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('');
+  target.innerHTML = list.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${publisher.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? `<img src="${escapeHtml(publisher.logo)}" alt="شعار ${escapeHtml(publisher.name)}" loading="lazy" decoding="async" />` : escapeHtml(publisher.logo || publisher.name.slice(0, 1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('');
 }
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) window.GhazalAPI.catalog().then(applyCatalogPayload).catch(() => {});
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) {
@@ -295,7 +297,7 @@ $('#search-open').addEventListener('click', () => showOverlay('search-overlay'))
 $('#cart-open').addEventListener('click', () => showOverlay('cart-overlay'));
 $$('[data-close]').forEach(button => button.addEventListener('click', () => hideOverlay(button.dataset.close)));
 $$('.overlay').forEach(overlay => overlay.addEventListener('click', event => { if (event.target === overlay) hideOverlay(overlay.id); }));
-document.addEventListener('keydown', event => { if (event.key === 'Escape') $$('.overlay:not([hidden])').forEach(overlay => hideOverlay(overlay.id)); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape') { $$('.overlay:not([hidden])').forEach(overlay => hideOverlay(overlay.id)); if (document.getElementById('cover-zoom-overlay')) { document.getElementById('cover-zoom-overlay').remove(); document.body.classList.remove('cover-zoom-open'); } } });
 
 document.body.insertAdjacentHTML('beforeend', '<div id="site-toast" class="site-toast" role="status" aria-live="polite"></div>');
 function toast(message) {
@@ -396,6 +398,7 @@ function flyBookToCart(button) {
   setTimeout(() => clone.remove(), (duration + .12) * 1000);
 }
 document.addEventListener('click', event => {
+  const zoom = event.target.closest('[data-zoom-cover]'); if (zoom) { openCoverZoom(zoom); return; }
   const view = event.target.closest('[data-view]');
   const add = event.target.closest('[data-add]');
   const favorite = event.target.closest('[data-favorite]');
@@ -696,7 +699,7 @@ function relatedBooks(book) {
 }
 function renderBookPage(id) {
   const book = byId[id];
-  if (!book) { location.hash = '#catalog'; return; }
+  if (!book) { if (catalogLoaded) location.hash = '#catalog'; return; }
   const suggestions = relatedBooks(book);
   const publisherShelf = publisherBooks(book.publisher).filter(item => item.id !== book.id);
   const authorShelf = authorBooks(book.author).filter(item => item.id !== book.id);
@@ -704,7 +707,7 @@ function renderBookPage(id) {
   const authorSection = authorShelf.length >= 3 ? `<section class="related-books book-detail-shelf"><div class="section-heading compact"><div><p class="eyebrow">قراءة أخرى من المؤلف</p><h2>كتب أخرى لـ <em>${escapeHtml(book.author)}</em></h2></div><a class="underlined-link" href="#author/${encodeURIComponent(book.author)}">ملف المؤلف <span>↖</span></a></div><div id="author-books-carousel"></div></section>` : '';
   const suggestionsSection = `<section class="related-books"><div class="section-heading compact"><div><p class="eyebrow">اقتراحات ذكية من رفوف الغزال</p><h2>قد يعجبك <em>أيضًا</em></h2></div><a class="underlined-link" href="#catalog">استكشف كل الكتب <span>↖</span></a></div><div id="related-books-carousel"></div></section>`;
   const available = Number(book.stock) > 0;
-  $('#book-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="book-detail"><div class="book-detail-cover"><img src="${coverUrl(book, 'display')}" alt="غلاف ${escapeHtml(book.title)}" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /></div><div class="book-detail-copy"><p class="eyebrow">${escapeHtml(book.genre)} / صفحة الكتاب</p><h1 id="book-page-title">${escapeHtml(book.title)}</h1><p class="detail-author">بقلم <a href="#author/${encodeURIComponent(book.author)}">${escapeHtml(book.author)}</a> · <a href="#publisher/${encodeURIComponent(book.publisher)}">${escapeHtml(book.publisher)}</a></p><p class="detail-note">${escapeHtml(book.note)}</p><div class="detail-meta"><div><span>التصنيف الفرعي</span><strong>${escapeHtml(book.genre)}</strong></div><div><span>المؤلف</span><strong>${escapeHtml(book.author)}</strong></div><div><span>السعر</span><strong>${money(book.price)}</strong></div><div><span>التوفر</span><strong>${available ? 'متوفر' : 'غير متوفر حاليًا'}</strong></div></div>${available ? `<button class="button button-dark" data-add="${book.id}">أضف إلى السلة <span>↖</span></button>` : '<p class="stock-empty detail-stock-empty">هذا الكتاب غير متوفر حاليًا.</p>'}</div></div>${suggestionsSection}${publisherSection}${authorSection}`;
+  $('#book-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="book-detail"><div class="book-detail-cover"><button class="book-cover-zoom" type="button" data-zoom-cover="${escapeHtml(coverPath(book.image || book.display) || coverUrl(book, 'display'))}" aria-label="تكبير غلاف ${escapeHtml(book.title)}"><img src="${coverUrl(book, 'display')}" alt="غلاف ${escapeHtml(book.title)}" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /><span>تكبير الغلاف <b aria-hidden="true">⌕</b></span></button></div><div class="book-detail-copy"><p class="eyebrow">${escapeHtml(book.genre)} / صفحة الكتاب</p><h1 id="book-page-title">${escapeHtml(book.title)}</h1><p class="detail-author">بقلم <a href="#author/${encodeURIComponent(book.author)}">${escapeHtml(book.author)}</a> · <a href="#publisher/${encodeURIComponent(book.publisher)}">${escapeHtml(book.publisher)}</a></p><p class="detail-note">${escapeHtml(book.note)}</p><div class="detail-meta"><div><span>التصنيف الفرعي</span><strong>${escapeHtml(book.genre)}</strong></div><div><span>المؤلف</span><strong>${escapeHtml(book.author)}</strong></div><div><span>السعر</span><strong>${money(book.price)}</strong></div><div><span>التوفر</span><strong>${available ? 'متوفر' : 'غير متوفر حاليًا'}</strong></div></div>${available ? `<button class="button button-dark" data-add="${book.id}">أضف إلى السلة <span>↖</span></button>` : '<p class="stock-empty detail-stock-empty">هذا الكتاب غير متوفر حاليًا.</p>'}</div></div>${suggestionsSection}${publisherSection}${authorSection}`;
   const detailPrice = $('#book-page-content .detail-meta div:nth-child(3) strong'); if (detailPrice) detailPrice.innerHTML = priceHtml(book);
   if (book.review) $('#book-page-content .detail-note').textContent = book.review;
   if (publisherShelf.length) renderCarousel('publisher-books-carousel', `publisher-${book.id}`, publisherShelf);
@@ -712,11 +715,18 @@ function renderBookPage(id) {
   renderCarousel('related-books-carousel', `related-${book.id}`, suggestions);
   observeReveals();
 }
+function openCoverZoom(button) {
+  const src = button.dataset.zoomCover; if (!src) return;
+  document.getElementById('cover-zoom-overlay')?.remove();
+  const title = $('#book-page-title')?.textContent || 'غلاف الكتاب';
+  document.body.insertAdjacentHTML('beforeend', `<div class="cover-zoom-overlay" id="cover-zoom-overlay" role="dialog" aria-modal="true" aria-label="غلاف ${escapeHtml(title)}"><button class="cover-zoom-close" type="button" aria-label="إغلاق التكبير">×</button><figure><img src="${escapeHtml(src)}" alt="غلاف ${escapeHtml(title)}" /><figcaption>${escapeHtml(title)}<small>انقر على الغلاف أو خارجه، أو اضغط Escape للإغلاق</small></figcaption></figure></div>`);
+  const overlay = $('#cover-zoom-overlay'); document.body.classList.add('cover-zoom-open'); overlay.addEventListener('click', event => { if (event.target === overlay || event.target.closest?.('.cover-zoom-close, figure img')) { overlay.remove(); document.body.classList.remove('cover-zoom-open'); } }); overlay.querySelector('.cover-zoom-close').focus();
+}
 function renderPublisherPage(name) {
   const publisher = publisherByName(name);
-  if (!publisher) { location.hash = '#publishers'; return; }
+  if (!publisher) { if (catalogLoaded) location.hash = '#publishers'; return; }
   publisherQuery = ''; publisherFilter = 'all'; publisherGenre = 'all';
-  const logo = publisher.logo?.startsWith('data:') ? `<img src="${publisher.logo}" alt="شعار ${escapeHtml(publisher.name)}" />` : escapeHtml(publisher.logo || publisher.name.slice(0, 1));
+  const logo = publisher.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? `<img src="${escapeHtml(publisher.logo)}" alt="شعار ${escapeHtml(publisher.name)}" />` : escapeHtml(publisher.logo || publisher.name.slice(0, 1));
   const publisherFilters = [...catalogBookGenres, ...publisherBooks(publisher.name).map(book => book.genre).filter(Boolean)].filter((genre, index, list) => list.indexOf(genre) === index).sort((a,b) => a.localeCompare(b, 'ar')).map(genre => ({ value:`genre:${genre}`, label:genre }));
   $('#publisher-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى الفهرس</a><div class="profile-header"><div class="profile-logo" aria-hidden="true">${logo}</div><div><p class="eyebrow">دار نشر / ملف الناشر</p><h1 class="profile-title" id="publisher-page-title">${escapeHtml(publisher.name)}</h1><p>${escapeHtml(publisher.description)}</p><small>${escapeHtml(publisher.city)} · ${escapeHtml(publisher.since)}</small></div></div><div class="profile-books"><div class="card-heading"><h2>كتب <em>الدار</em></h2><span id="publisher-count" class="catalog-summary"></span></div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="publisher-search" type="search" placeholder="ابحث داخل إصدارات الدار" /></label><select id="publisher-sort" aria-label="ترتيب إصدارات الدار"><option value="featured">الأحدث</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option></select></div><label class="publisher-genre-filter">التصنيف أو النوع<select id="publisher-genre-filter"><option value="all">كل الإصدارات</option>${publisherFilters.map(filter => `<option value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)}</option>`).join('')}</select></label><div class="catalog-grid" id="publisher-books"></div></div>`;
   const update = () => { const [filterType, filterValue] = publisherGenre.split(':'); let list = publisherBooks(publisher.name).filter(book => (publisherGenre === 'all' || (filterType === 'category' ? book.category === filterValue : genreMatches(book, filterValue))) && (!publisherQuery || normalize(`${book.title} ${book.author} ${book.genre}`).includes(normalize(publisherQuery)))); const sort = $('#publisher-sort').value; if (sort === 'title') list.sort((a,b) => a.title.localeCompare(b.title, 'ar')); if (sort === 'price-low') list.sort((a,b) => a.price - b.price); $('#publisher-count').textContent = `${list.length} إصدارات`; renderProfileBooks(list, $('#publisher-books')); $('#publisher-genre-filter').value = publisherGenre; };
@@ -775,7 +785,7 @@ function renderDepartmentsPage() {
   observeReveals();
 }
 function renderPublishersPage() {
-  $('#publishers-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / شركاء الكتاب</p><h1 id="publishers-page-title">دور <em>النشر</em></h1><p>اكتشف مشاريع الناشرين والكتب المتاحة من كل دار.</p></div></div><div class="publisher-grid page-publisher-grid">${publishers.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${escapeHtml(publisher.logo || publisher.name.slice(0,1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('')}</div>`;
+  $('#publishers-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / شركاء الكتاب</p><h1 id="publishers-page-title">دور <em>النشر</em></h1><p>اكتشف مشاريع الناشرين والكتب المتاحة من كل دار.</p></div></div><div class="publisher-grid page-publisher-grid">${publishers.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${publisher.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? `<img src="${escapeHtml(publisher.logo)}" alt="شعار ${escapeHtml(publisher.name)}" />` : escapeHtml(publisher.logo || publisher.name.slice(0,1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('')}</div>`;
   observeReveals();
 }
 function renderJournalPage() {
@@ -849,7 +859,7 @@ function renderFeaturedSelections() {
   const selected = [...new Set([...(featuredBookIds || []), ...books.map(book => book.id)])].map(id => byId[id]).filter(Boolean).slice(0, 4);
   if (!selected.length) { target.innerHTML = ''; return; }
   const numerals = ['٠١', '٠٢', '٠٣']; const lead = selected[0]; const rest = selected.slice(1);
-  target.innerHTML = `<article class="feature-story"><div class="feature-book-stage"><button class="feature-selection-cover" data-view="${escapeHtml(lead.id)}" aria-label="افتح تفاصيل ${escapeHtml(lead.title)}"><img class="selection-cover-image" src="${coverUrl(lead, 'display')}" alt="غلاف ${escapeHtml(lead.title)}" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /></button><span class="stage-index">G / 01</span></div><div class="feature-description"><div><span class="category-label">${escapeHtml(lead.genre || 'مختارات الغزال')}</span><h3 data-view="${escapeHtml(lead.id)}" tabindex="0">${escapeHtml(lead.title)}</h3><p>${escapeHtml(lead.review || lead.note || 'كتاب مختار من رفوف الغزال.')}</p></div>${Number(lead.stock) > 0 ? `<button class="round-add" data-add="${escapeHtml(lead.id)}" aria-label="أضف ${escapeHtml(lead.title)} إلى السلة">↖</button>` : ''}</div></article><div class="selection-list">${rest.map((book, index) => `<article class="selection-item"><span class="item-number">${numerals[index] || index + 1}</span><button class="selection-cover-button" data-view="${escapeHtml(book.id)}" aria-label="افتح تفاصيل ${escapeHtml(book.title)}"><img class="selection-cover-image" src="${coverUrl(book)}" alt="غلاف ${escapeHtml(book.title)}" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /></button><div class="selection-info"><span class="category-label">${escapeHtml(book.genre || '')}</span><h3 data-view="${escapeHtml(book.id)}" tabindex="0">${escapeHtml(book.title)}</h3><p>${escapeHtml(book.review || book.note || 'كتاب مختار من رفوف الغزال.')}</p><a class="item-link" href="#book/${encodeURIComponent(book.id)}">عرض الكتاب <span aria-hidden="true">↖</span></a></div></article>`).join('')}</div>`;
+  target.innerHTML = `<article class="feature-story"><div class="feature-book-stage"><button class="feature-selection-cover" data-view="${escapeHtml(lead.id)}" aria-label="افتح تفاصيل ${escapeHtml(lead.title)}"><img class="selection-cover-image" src="${coverUrl(lead, 'display')}" alt="غلاف ${escapeHtml(lead.title)}" loading="lazy" decoding="async" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /></button><span class="stage-index">G / 01</span></div><div class="feature-description"><div><span class="category-label">${escapeHtml(lead.genre || 'مختارات الغزال')}</span><h3 data-view="${escapeHtml(lead.id)}" tabindex="0">${escapeHtml(lead.title)}</h3><p>${escapeHtml(lead.review || lead.note || 'كتاب مختار من رفوف الغزال.')}</p></div>${Number(lead.stock) > 0 ? `<button class="round-add" data-add="${escapeHtml(lead.id)}" aria-label="أضف ${escapeHtml(lead.title)} إلى السلة">↖</button>` : ''}</div></article><div class="selection-list">${rest.map((book, index) => `<article class="selection-item"><span class="item-number">${numerals[index] || index + 1}</span><button class="selection-cover-button" data-view="${escapeHtml(book.id)}" aria-label="افتح تفاصيل ${escapeHtml(book.title)}"><img class="selection-cover-image" src="${coverUrl(book)}" alt="غلاف ${escapeHtml(book.title)}" loading="lazy" decoding="async" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /></button><div class="selection-info"><span class="category-label">${escapeHtml(book.genre || '')}</span><h3 data-view="${escapeHtml(book.id)}" tabindex="0">${escapeHtml(book.title)}</h3><p>${escapeHtml(book.review || book.note || 'كتاب مختار من رفوف الغزال.')}</p><a class="item-link" href="#book/${encodeURIComponent(book.id)}">عرض الكتاب <span aria-hidden="true">↖</span></a></div></article>`).join('')}</div>`;
   observeReveals();
 }
 function renderHomeShelves() {
@@ -858,18 +868,19 @@ function renderHomeShelves() {
     if (!anchor?.parentNode) return;
     anchor.insertAdjacentHTML('beforebegin', `<section class="home-book-shelves section-pad wrap" id="home-book-shelves"><div class="home-shelf-block home-bestseller-shelf"><div class="home-shelf-heading"><div><h3>الأكثر قراءة الآن</h3><p>عناوين تعود إليها الأيدي مرة بعد مرة.</p></div><a class="underlined-link" href="#catalog">كل الكتب ↖</a></div><div id="home-bestseller-grid"></div></div><div id="home-author-spotlight"></div><div id="home-collection-shelves"></div><div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>قراءة جميلة بسعر هادئ</h3><p>أفضل ما تجده بـ ٢٠٠٠ د.ج أو أقل.</p></div><a class="underlined-link" href="#catalog">تصفح حسب السعر ↖</a></div><div id="home-value-grid"></div></div></section>`);
   }
-  const featuredIds = new Set(featuredBookIds || []);
+  const featuredIds = new Set((featuredBookIds || []).map(String));
+  const bestSellerIds = new Set((bestSellerBookIds || []).map(String));
   const homepageCollections = collections.filter(collection => collection.active && collection.homepage).slice(0, 4);
-  const fallback = { id: 'collection-recommended', slug: 'recommended', title: 'اختيارات أخرى', description: 'عناوين تستحق أن تجد طريقها إلى رفّك.', bookIds: books.filter(book => !featuredIds.has(book.id)).map(book => book.id) };
-  const recommended = books.filter(book => !featuredIds.has(book.id)).slice(0, 8);
+  const fallback = { id: 'collection-recommended', slug: 'recommended', title: 'اختيارات أخرى', description: 'عناوين تستحق أن تجد طريقها إلى رفّك.', bookIds: books.filter(book => !featuredIds.has(String(book.id)) && !bestSellerIds.has(String(book.id))).map(book => book.id) };
+  const recommended = books.filter(book => !featuredIds.has(String(book.id)) && !bestSellerIds.has(String(book.id))).slice(0, 8);
   const shelves = homepageCollections.length ? homepageCollections : [fallback];
   const spotlightBooks = authorSpotlight ? authorSpotlight.bookIds.map(id => byId[id]).filter(Boolean) : [];
   $('#home-author-spotlight').innerHTML = authorSpotlight ? `<article class="author-spotlight"><div class="author-spotlight-art">${authorSpotlight.photo ? `<img src="${authorSpotlight.photo.startsWith('data:') ? authorSpotlight.photo : escapeHtml(authorSpotlight.photo)}" alt="${escapeHtml(authorSpotlight.name)}" loading="lazy" />` : `<span>${escapeHtml(authorSpotlight.name).slice(0,1)}</span>`}</div><div class="author-spotlight-copy"><p class="eyebrow">من رفوف الغزال</p><h2>صوت <em>${escapeHtml(authorSpotlight.name)}</em></h2><p>${escapeHtml(authorSpotlight.bio)}</p><a class="underlined-link" href="#author/${encodeURIComponent(authorSpotlight.name)}">اكتشف كتبه (${spotlightBooks.length}) ↖</a></div><div class="author-spotlight-books">${spotlightBooks.slice(0,3).map(cardTemplate).join('')}</div></article>` : '';
   $('#home-collection-shelves').innerHTML = shelves.map((collection, index) => { const href = collection.id === 'collection-recommended' ? '#catalog' : `#collection/${encodeURIComponent(collection.slug)}`; return `<div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>${escapeHtml(collection.title)}</h3><p>${escapeHtml(collection.description || '')}</p></div><a class="underlined-link" href="${href}">عرض الكل ↖</a></div><div id="home-collection-grid-${index}"></div></div>`; }).join('');
-  shelves.forEach((collection, index) => renderCarousel(`home-collection-grid-${index}`, `collection-${index}`, collection.bookIds.map(id => byId[id]).filter(Boolean).slice(0, 8)));
+  shelves.forEach((collection, index) => renderCarousel(`home-collection-grid-${index}`, `collection-${index}`, collection.bookIds.map(id => byId[id]).filter(book => book && !bestSellerIds.has(String(book.id))).slice(0, 8)));
   const bestsellers = bestSellerBookIds.map(id => byId[id]).filter(Boolean);
-  renderShelfGrid('home-bestseller-grid', bestsellers.length ? bestsellers : recommended);
-  document.querySelector('.home-bestseller-shelf')?.toggleAttribute('hidden', !(bestsellers.length || recommended.length));
+  renderShelfGrid('home-bestseller-grid', bestsellers);
+  document.querySelector('.home-bestseller-shelf')?.toggleAttribute('hidden', !bestsellers.length);
   $('#home-collection-shelves').hidden = !shelves.length;
   const bestsellerRank = new Map(bestSellerBookIds.map((id, index) => [String(id), index]));
   const valueBooks = books.filter(book => Number(book.price) <= 2000).sort((a, b) => {
@@ -886,7 +897,11 @@ function renderFeaturedPublishers() {
   const target = document.getElementById('publisher-featured'); if (!target) return;
   const active = (publisherFeatures || []).filter(item => item.active !== false).map(item => ({ ...item, books: books.filter(book => book.publisher === item.publisher) }));
   target.hidden = !active.length;
-  target.innerHTML = active.map(item => `<article class="publisher-feature publisher-feature--${escapeHtml(item.id)}" style="--publisher-accent:${escapeHtml(item.accent || '#8f5e3b')};--publisher-surface:${escapeHtml(item.surface || '#eee2ce')};--publisher-ink:${escapeHtml(item.ink || '#1b1915')}"><div class="publisher-feature-visual" id="publisher-shelf-${escapeHtml(item.id)}"></div><div class="publisher-feature-copy">${item.logo ? `<div class="publisher-feature-logo"><img src="${escapeHtml(item.logo)}" alt="شعار ${escapeHtml(item.publisher)}" /></div>` : ''}<p class="publisher-feature-kicker">${escapeHtml(item.slogan || item.kicker || 'دار نشر مميزة')}</p><h2>${escapeHtml(item.publisher)}</h2><p class="publisher-feature-description">${escapeHtml(item.description || '')}</p><a class="publisher-feature-link" href="#publisher/${encodeURIComponent(item.publisher)}">كل إصدارات الدار <span>←</span></a></div></article>`).join('');
+  target.innerHTML = active.map(item => { const publisher = publishers.find(entry => entry.name === item.publisher); const logo = item.logo || (publisher?.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? publisher.logo : ''); const accent = /^#[\da-f]{6}$/i.test(item.accent || '') ? item.accent : '#8f5e3b'; const surface = /^#[\da-f]{6}$/i.test(item.surface || '') ? item.surface : '#eee2ce'; const ink = /^#[\da-f]{6}$/i.test(item.ink || '') ? item.ink : '#1b1915'; const background = /^\/covers\/[a-f\d]{64}\.[a-z0-9]+$/i.test(item.backgroundImage || '') ? item.backgroundImage : ''; return `<article class="publisher-feature publisher-feature--${escapeHtml(item.id)}" data-feature-background="${escapeHtml(background)}" style="--publisher-accent:${accent};--publisher-surface:${surface};--publisher-ink:${ink};--publisher-bg-image:none;background:${surface};color:${ink}"><div class="publisher-feature-visual" id="publisher-shelf-${escapeHtml(item.id)}"></div><div class="publisher-feature-copy">${logo ? `<div class="publisher-feature-logo"><img src="${escapeHtml(logo)}" alt="شعار ${escapeHtml(item.publisher)}" loading="lazy" decoding="async" /></div>` : `<div class="publisher-feature-mark" aria-hidden="true">${escapeHtml(publisher?.logo || item.mark || item.publisher.slice(0,1))}</div>`}<p class="publisher-feature-kicker">${escapeHtml(item.kicker || 'دار نشر مميزة')}</p><h2>${escapeHtml(item.publisher)}</h2><p class="publisher-feature-description">${escapeHtml(item.description || '')}</p><a class="publisher-feature-link" href="#publisher/${encodeURIComponent(item.publisher)}">كل إصدارات الدار <span>←</span></a></div></article>`; }).join('');
+  const deferredBackgrounds = [...target.querySelectorAll('[data-feature-background]')].filter(feature => feature.dataset.featureBackground);
+  const loadBackground = feature => feature.style.setProperty('--publisher-bg-image', `url("${feature.dataset.featureBackground}")`);
+  if ('IntersectionObserver' in window) { const observer = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) { loadBackground(entry.target); observer.unobserve(entry.target); } }), { rootMargin:'250px' }); deferredBackgrounds.forEach(feature => observer.observe(feature)); }
+  else deferredBackgrounds.forEach(loadBackground);
   active.forEach(item => {
     renderCarousel(`publisher-shelf-${item.id}`, `publisher-${item.id}`, item.books);
   });

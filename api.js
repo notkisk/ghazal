@@ -38,6 +38,7 @@ window.GhazalAPI = (() => {
     adminConversions: (token) => request('/api/admin/conversions', { headers:{ authorization:`Bearer ${token}` } }),
     adminDiagnostics: (token) => request('/api/admin/diagnostics', { headers:{ authorization:`Bearer ${token}` } }),
     adminAnalytics: (token) => request('/api/admin/analytics', { headers:{ authorization:`Bearer ${token}` } }),
+    adminNewsletter: (token) => request('/api/admin/newsletter', { headers:{ authorization:`Bearer ${token}` } }),
     updateOrder: (token, reference, status, notes = '') => request(`/api/admin/orders/${encodeURIComponent(reference)}`, { method:'PATCH', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ status, notes }) })
   };
 })();

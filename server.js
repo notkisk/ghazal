@@ -190,6 +190,22 @@ const configuredPassword = process.env.GHAZAL_ADMIN_PASSWORD;
 if (!db.prepare('SELECT 1 FROM users LIMIT 1').get() && configuredPassword) db.prepare('INSERT INTO users (email,password_hash,role,created_at) VALUES (?,?,?,?)').run(process.env.GHAZAL_ADMIN_EMAIL || 'owner@alghazal.local', passwordHash(configuredPassword), 'owner', now());
 const emptyContent = { genres:'{}', bookGenres:'[]', discounts:'[]', featured:'[]', authorProfiles:'{}', publisherFeatures:'[]' };
 for (const [key, value] of Object.entries(emptyContent)) if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get(key)) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run(key, value, now());
+// The clean-slate catalog migration removed the old in-code spotlight defaults.
+// Restore those four original designs once, from the values shipped before the
+// reset, without overwriting any spotlight configuration an owner has saved.
+if (!db.prepare("SELECT 1 FROM store_content WHERE key='publisherFeaturesRestored'").get()) {
+  const saved = contentValue('publisherFeatures', []);
+  if (!Array.isArray(saved) || !saved.length) {
+    const restored = [
+      { id:'mada', publisher:'دار المدى', active:true, layoutVersion:3, slogan:'بيت الثقافة والإبداع', kicker:'أدبٌ وفكرٌ وفنون', description:'رفّ من الكتب التي تصنع ذائقة، وتترك أثرًا أبعد من الصفحة الأخيرة.', accent:'#e51c2a', surface:'#f4d8c8', ink:'#251b19', mark:'م' },
+      { id:'jamal', publisher:'منشورات الجمل', active:true, slogan:'أصواتٌ من العالم', kicker:'أصواتٌ لا تشبه سواها', description:'دار عريقة في الترجمة الأدبية والفلسفية، وكتب تمنح القارئ فرصة الإصغاء إلى أصوات مختلفة.', accent:'#bd1d2d', surface:'#e9d8b9', ink:'#271914', mark:'ج' },
+      { id:'arab-network', publisher:'الشبكة العربية للأبحاث والنشر', active:true, slogan:'بوابتك نحو عالم المعرفة', kicker:'معرفةٌ عربيةٌ رصينة', description:'كتب الفكر والتاريخ والسياسة التي تمنح السؤال العربي مساحة أوسع.', accent:'#2e579a', surface:'#dbe8ef', ink:'#18243b', mark:'ش' },
+      { id:'rafidain', publisher:'دار الرافدين', active:true, slogan:'من وادي الرافدين بدأت الكتابة والمدنية', kicker:'للكتاب العربي الجميل', description:'إصدارات تحمل حيوية المكتبة العربية، بين التراث والقراءة المعاصرة.', accent:'#20205e', surface:'#e5e1ee', ink:'#171735', mark:'ر' }
+    ];
+    db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('publisherFeatures', json(restored), now());
+  }
+  db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('publisherFeaturesRestored', 'true', now());
+}
 
 const migratedCovers = migrateEmbeddedCovers();
 if (migratedCovers) console.log(`Ghazal: migrated ${migratedCovers} embedded cover(s) to ${COVERS_DIR}`);
@@ -211,16 +227,16 @@ function deriveBookGenres(books) {
 }
 function catalogPayload() {
   const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const weeklySales = db.prepare("SELECT book_id, SUM(qty) AS quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status IN ('confirmed','preparing','shipped','delivered') AND orders.created_at >= ? GROUP BY book_id ORDER BY quantity DESC, MAX(orders.created_at) DESC LIMIT 8").all(weekStart);
-  const allTimeSales = db.prepare("SELECT book_id, SUM(qty) AS quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status IN ('confirmed','preparing','shipped','delivered') GROUP BY book_id ORDER BY quantity DESC, MAX(orders.created_at) DESC LIMIT 8").all();
+  const weeklySales = db.prepare("SELECT book_id, SUM(qty) AS quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status='confirmed' AND orders.created_at >= ? GROUP BY book_id ORDER BY quantity DESC, MAX(orders.created_at) DESC LIMIT 8").all(weekStart);
+  const allTimeSales = db.prepare("SELECT book_id, SUM(qty) AS quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status='confirmed' GROUP BY book_id ORDER BY quantity DESC, MAX(orders.created_at) DESC LIMIT 8").all();
   const bestSellerRows = weeklySales.length ? weeklySales : allTimeSales;
   const fallbackFeatured = contentValue('featured', []);
-  const bestSellerBookIds = bestSellerRows.length ? bestSellerRows.map(row => row.book_id) : fallbackFeatured;
+  const bestSellerBookIds = bestSellerRows.map(row => row.book_id);
   const profiles = contentValue('authorProfiles', {}); const books = bookList(new URL('http://local/api/books'));
   const genres = deriveGenres(books, contentValue('genres', {}));
   const bookGenres = deriveBookGenres(books);
   const authorSpotlight = Object.entries(profiles).map(([name, profile]) => ({ name, ...profile, bookIds: db.prepare('SELECT id FROM books WHERE author=? ORDER BY title').all(name).map(row => row.id) })).filter(author => author.bio && author.bookIds.length >= 2).sort((a,b) => Number(b.featured) - Number(a.featured) || b.bookIds.length - a.bookIds.length)[0] || null;
-  return { books, publishers: db.prepare('SELECT * FROM publishers ORDER BY name').all(), genres, bookGenres, discounts: contentValue('discounts', []), featuredBookIds: fallbackFeatured, publisherFeatures: contentValue('publisherFeatures', []), bestSellerBookIds, bestSellerSales: bestSellerRows, bestSellerWindow: weeklySales.length ? 'weekly' : allTimeSales.length ? 'all-time' : 'editorial-fallback', authorProfiles: profiles, authorSpotlight, collections: collectionList(false) };
+  return { books, publishers: db.prepare('SELECT * FROM publishers ORDER BY name').all(), genres, bookGenres, discounts: contentValue('discounts', []), featuredBookIds: fallbackFeatured, publisherFeatures: contentValue('publisherFeatures', []), bestSellerBookIds, bestSellerSales: bestSellerRows, bestSellerWindow: weeklySales.length ? 'weekly' : allTimeSales.length ? 'all-time' : 'none', authorProfiles: profiles, authorSpotlight, collections: collectionList(false) };
 }
 async function sendMetaPurchase(body, reference, total, items, request) {
   const pixel = process.env.META_PIXEL_ID; const token = process.env.META_ACCESS_TOKEN; const eventId = String(body.metaEventId || reference); const previous = db.prepare('SELECT status FROM conversion_events WHERE event_id=?').get(eventId); if (previous?.status === 'sent' || metaEventsInFlight.has(eventId)) return; if (!pixel || !token) { recordConversion(eventId,'Purchase',reference,'meta','skipped',{reason:'not_configured'}); return; }
@@ -341,6 +357,11 @@ async function api(req, res, url) {
       subscribeNewsletter(email, body.source);
       return send(res, 201, { ok:true, subscribed:true });
     }
+    if (req.method === 'GET' && url.pathname === '/api/admin/newsletter') {
+      const owner = requireRole(req, res, 'owner'); if (!owner) return;
+      const subscribers = db.prepare('SELECT email,source,created_at,updated_at FROM newsletter_subscribers ORDER BY created_at DESC,email COLLATE NOCASE').all();
+      return send(res, 200, { subscribers });
+    }
     if (req.method === 'GET' && url.pathname === '/api/orders/lookup') { const ref = String(url.searchParams.get('reference') || '').trim(); if (!/^GZ-[A-Z0-9-]{8,32}$/.test(ref)) return send(res, 400, { error:'invalid_reference' }); const order = db.prepare('SELECT * FROM orders WHERE reference=?').get(ref); if (!order) return send(res, 404, { error:'not_found' }); return send(res, 200, publicOrderView(order)); }
     const user = requireRole(req, res); if (!user) return;
     if (req.method === 'POST' && url.pathname === '/api/admin/users') { const owner = requirePermission(req,res,'manage_staff'); if (!owner) return; const body = await readBody(req); const email = String(body.email || '').trim().toLowerCase(); const password = String(body.password || ''); const role = body.role === 'owner' ? 'owner' : 'admin'; const permissions = role === 'owner' ? permissionsFor({role:'owner'}) : Object.fromEntries(permissionNames.map(name => [name, Boolean(body.permissions?.[name])])); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12) return send(res,400,{error:'invalid_user'}); if (db.prepare('SELECT 1 FROM users WHERE email=?').get(email)) return send(res,409,{error:'duplicate_user'}); const result = db.prepare('INSERT INTO users (email,password_hash,role,permissions_json,created_at) VALUES (?,?,?,?,?)').run(email,passwordHash(password),role,json(permissions),now()); audit(owner,'create','user',result.lastInsertRowid,{email,role,permissions}); return send(res,201,{user:{id:result.lastInsertRowid,email,role,permissions}}); }
@@ -382,6 +403,10 @@ async function api(req, res, url) {
         // truth. Existing descriptions survive when the name is unchanged.
         const dbBooks = db.prepare('SELECT author,publisher,category,genre FROM books').all();
         const derivedPublishers = [...new Set(dbBooks.map(book => String(book.publisher || '').trim()).filter(Boolean))];
+        // Keep the publisher directory aligned with the catalog. Empty
+        // publishers are removable from the dashboard; deleting them here
+        // makes that change durable instead of reappearing on the next load.
+        db.prepare('DELETE FROM publishers WHERE name NOT IN (SELECT DISTINCT publisher FROM books)').run();
         const publisherInsert = db.prepare('INSERT OR IGNORE INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?)');
         derivedPublishers.forEach(name => publisherInsert.run(name,'','إصدارات من هذا الناشر.',name.slice(0,1),stamp));
         const publisherUpsert = db.prepare('INSERT INTO publishers (name,city,description,logo,created_at) VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET city=excluded.city,description=excluded.description,logo=excluded.logo');
@@ -410,7 +435,7 @@ async function api(req, res, url) {
     if (req.method === 'GET' && url.pathname === '/api/admin/conversions') { if (user.role !== 'owner') return send(res,403,{error:'owner_only'}); return send(res,200,{events:db.prepare('SELECT * FROM conversion_events ORDER BY created_at DESC LIMIT 100').all()}); }
     if (req.method === 'GET' && url.pathname === '/api/admin/diagnostics') { if (user.role !== 'owner') return send(res,403,{error:'owner_only'}); return send(res,200,{ok:true,integrations:{metaCapiConfigured:Boolean(process.env.META_PIXEL_ID && process.env.META_ACCESS_TOKEN),telegramConfigured:Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID)},counts:{orders:db.prepare('SELECT COUNT(*) count FROM orders').get().count,conversionEvents:db.prepare('SELECT COUNT(*) count FROM conversion_events').get().count,errors:db.prepare('SELECT COUNT(*) count FROM error_log').get().count,lowStock:db.prepare('SELECT COUNT(*) count FROM books WHERE stock-reserved <= 3').get().count},recentErrors:db.prepare('SELECT source,message,created_at FROM error_log ORDER BY created_at DESC LIMIT 20').all()}); }
     if (req.method === 'GET' && url.pathname === '/api/admin/audit') { if (!can(user,'view_history')) return send(res,403,{error:'permission_denied',permission:'view_history'}); return send(res,200,{events:db.prepare('SELECT audit_log.*,users.email FROM audit_log LEFT JOIN users ON users.id=audit_log.user_id ORDER BY audit_log.created_at DESC LIMIT 500').all()}); }
-    if (req.method === 'GET' && url.pathname === '/api/admin/analytics') { if (!can(user,'view_finance')) return send(res,403,{error:'permission_denied',permission:'view_finance'}); const orders = db.prepare('SELECT status,total,created_at FROM orders').all(); const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); const confirmedStatuses = "('confirmed','preparing','shipped','delivered')"; const weeklyBooksSold = db.prepare(`SELECT book_id id,title,SUM(qty) quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status IN ${confirmedStatuses} AND orders.created_at >= ? GROUP BY book_id,title ORDER BY quantity DESC`).all(weekStart); const allTimeBooksSold = db.prepare(`SELECT book_id id,title,SUM(qty) quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status IN ${confirmedStatuses} GROUP BY book_id,title ORDER BY quantity DESC`).all(); const weeklyAllBooksSold = db.prepare("SELECT book_id id,title,SUM(qty) quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status NOT IN ('cancelled','returned') AND orders.created_at >= ? GROUP BY book_id,title ORDER BY quantity DESC").all(weekStart); const allTimeAllBooksSold = db.prepare("SELECT book_id id,title,SUM(qty) quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status NOT IN ('cancelled','returned') GROUP BY book_id,title ORDER BY quantity DESC").all(); const booksSold = weeklyBooksSold.length ? weeklyBooksSold : allTimeBooksSold; const allBooksSold = weeklyAllBooksSold.length ? weeklyAllBooksSold : allTimeAllBooksSold; return send(res,200,{orders,booksSold,allBooksSold,booksSoldWindow:weeklyBooksSold.length ? 'weekly' : 'all-time',allBooksSoldWindow:weeklyAllBooksSold.length ? 'weekly' : 'all-time',lowStock:db.prepare('SELECT id,title,stock,reserved,stock-reserved available FROM books WHERE stock-reserved <= 3 ORDER BY available').all(),newsletterSubscribers:db.prepare('SELECT COUNT(*) count FROM newsletter_subscribers').get().count}); }
+    if (req.method === 'GET' && url.pathname === '/api/admin/analytics') { if (!can(user,'view_finance')) return send(res,403,{error:'permission_denied',permission:'view_finance'}); const orders = db.prepare('SELECT status,total,created_at FROM orders').all(); const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); const weeklyBooksSold = db.prepare("SELECT book_id id,title,SUM(qty) quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status='confirmed' AND orders.created_at >= ? GROUP BY book_id,title ORDER BY quantity DESC").all(weekStart); const allTimeBooksSold = db.prepare("SELECT book_id id,title,SUM(qty) quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status='confirmed' GROUP BY book_id,title ORDER BY quantity DESC").all(); const weeklyAllBooksSold = db.prepare("SELECT book_id id,title,SUM(qty) quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status NOT IN ('cancelled','returned') AND orders.created_at >= ? GROUP BY book_id,title ORDER BY quantity DESC").all(weekStart); const allTimeAllBooksSold = db.prepare("SELECT book_id id,title,SUM(qty) quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status NOT IN ('cancelled','returned') GROUP BY book_id,title ORDER BY quantity DESC").all(); const booksSold = weeklyBooksSold.length ? weeklyBooksSold : allTimeBooksSold; const allBooksSold = weeklyAllBooksSold.length ? weeklyAllBooksSold : allTimeAllBooksSold; return send(res,200,{orders,booksSold,allBooksSold,booksSoldWindow:weeklyBooksSold.length ? 'weekly' : 'all-time',allBooksSoldWindow:weeklyAllBooksSold.length ? 'weekly' : 'all-time',lowStock:db.prepare('SELECT id,title,author,publisher,stock,reserved,stock-reserved available FROM books WHERE stock-reserved <= 3 ORDER BY available').all(),newsletterSubscribers:db.prepare('SELECT COUNT(*) count FROM newsletter_subscribers').get().count}); }
     return send(res,404,{error:'not_found'});
   } catch (error) { logError('api',error,{method:req.method,path:url.pathname}); const status = error.message === 'invalid_json' ? 400 : error.message.startsWith('insufficient_stock') ? 409 : 422; return send(res,status,{error:error.message}); }
 }
@@ -429,7 +454,18 @@ const staticServer = http.createServer(async (req,res) => {
   let filePath = path.normalize(path.join(ROOT, url.pathname === '/' ? 'index.html' : url.pathname)); if (!filePath.startsWith(ROOT) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) filePath = path.join(ROOT,'index.html');
   const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.xml':'application/xml; charset=utf-8', '.txt':'text/plain; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.avif':'image/avif', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
   const isAsset = /\.(?:css|js|png|jpg|jpeg|webp|svg|ico|xlsx)$/i.test(filePath);
-  res.writeHead(200, { 'content-type':types[path.extname(filePath)] || 'application/octet-stream', 'x-content-type-options':'nosniff', 'x-frame-options':'DENY', 'referrer-policy':'strict-origin-when-cross-origin', 'permissions-policy':'camera=(), microphone=(), geolocation=()', ...(isAsset ? {'cache-control':'public, max-age=86400'} : {'cache-control':'no-cache'}) }); fs.createReadStream(filePath).pipe(res);
+  const versionedAsset = isAsset && url.searchParams.has('v');
+  const stat = fs.statSync(filePath);
+  const compressible = /\.(?:html|js|css|json|xml|txt|svg)$/i.test(filePath);
+  const useGzip = compressible && stat.size > 1024 && /(?:^|,)\s*gzip(?:\s*;\s*q=(?!0(?:\.0*)?\s*(?:,|$))[\d.]+)?\s*(?:,|$)/i.test(String(req.headers['accept-encoding'] || ''));
+  const etag = `W/\"${stat.size.toString(16)}-${Math.trunc(stat.mtimeMs).toString(16)}\"`;
+  const requestEtags = String(req.headers['if-none-match'] || '').split(',').map(value => value.trim());
+  const notModified = req.headers['if-none-match'] ? requestEtags.includes('*') || requestEtags.includes(etag) : Boolean(req.headers['if-modified-since'] && Date.parse(req.headers['if-modified-since']) >= Math.floor(stat.mtimeMs / 1000) * 1000);
+  const headers = { 'content-type':types[path.extname(filePath)] || 'application/octet-stream', 'x-content-type-options':'nosniff', 'x-frame-options':'DENY', 'referrer-policy':'strict-origin-when-cross-origin', 'permissions-policy':'camera=(), microphone=(), geolocation=()', 'cache-control':versionedAsset ? 'public, max-age=31536000, immutable' : isAsset ? 'public, max-age=86400' : 'no-cache', etag, 'last-modified':stat.mtime.toUTCString(), ...(compressible ? { vary:'Accept-Encoding' } : {}), ...(useGzip ? { 'content-encoding':'gzip' } : {}) };
+  if (notModified) { res.writeHead(304, headers); return res.end(); }
+  res.writeHead(200, headers);
+  const source = fs.createReadStream(filePath);
+  return useGzip ? source.pipe(zlib.createGzip({ level:zlib.constants.Z_BEST_SPEED })).pipe(res) : source.pipe(res);
 });
 if (require.main === module) staticServer.listen(Number(process.env.PORT || 3000), () => console.log(`Ghazal listening on http://localhost:${process.env.PORT || 3000}`));
 module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, cacheRemoteCovers, storeCover, COVERS_DIR };
