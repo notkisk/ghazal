@@ -454,7 +454,18 @@ const staticServer = http.createServer(async (req,res) => {
   let filePath = path.normalize(path.join(ROOT, url.pathname === '/' ? 'index.html' : url.pathname)); if (!filePath.startsWith(ROOT) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) filePath = path.join(ROOT,'index.html');
   const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.xml':'application/xml; charset=utf-8', '.txt':'text/plain; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.avif':'image/avif', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
   const isAsset = /\.(?:css|js|png|jpg|jpeg|webp|svg|ico|xlsx)$/i.test(filePath);
-  res.writeHead(200, { 'content-type':types[path.extname(filePath)] || 'application/octet-stream', 'x-content-type-options':'nosniff', 'x-frame-options':'DENY', 'referrer-policy':'strict-origin-when-cross-origin', 'permissions-policy':'camera=(), microphone=(), geolocation=()', ...(isAsset ? {'cache-control':'public, max-age=86400'} : {'cache-control':'no-cache'}) }); fs.createReadStream(filePath).pipe(res);
+  const versionedAsset = isAsset && url.searchParams.has('v');
+  const stat = fs.statSync(filePath);
+  const compressible = /\.(?:html|js|css|json|xml|txt|svg)$/i.test(filePath);
+  const useGzip = compressible && stat.size > 1024 && /(?:^|,)\s*gzip(?:\s*;\s*q=(?!0(?:\.0*)?\s*(?:,|$))[\d.]+)?\s*(?:,|$)/i.test(String(req.headers['accept-encoding'] || ''));
+  const etag = `W/\"${stat.size.toString(16)}-${Math.trunc(stat.mtimeMs).toString(16)}\"`;
+  const requestEtags = String(req.headers['if-none-match'] || '').split(',').map(value => value.trim());
+  const notModified = req.headers['if-none-match'] ? requestEtags.includes('*') || requestEtags.includes(etag) : Boolean(req.headers['if-modified-since'] && Date.parse(req.headers['if-modified-since']) >= Math.floor(stat.mtimeMs / 1000) * 1000);
+  const headers = { 'content-type':types[path.extname(filePath)] || 'application/octet-stream', 'x-content-type-options':'nosniff', 'x-frame-options':'DENY', 'referrer-policy':'strict-origin-when-cross-origin', 'permissions-policy':'camera=(), microphone=(), geolocation=()', 'cache-control':versionedAsset ? 'public, max-age=31536000, immutable' : isAsset ? 'public, max-age=86400' : 'no-cache', etag, 'last-modified':stat.mtime.toUTCString(), ...(compressible ? { vary:'Accept-Encoding' } : {}), ...(useGzip ? { 'content-encoding':'gzip' } : {}) };
+  if (notModified) { res.writeHead(304, headers); return res.end(); }
+  res.writeHead(200, headers);
+  const source = fs.createReadStream(filePath);
+  return useGzip ? source.pipe(zlib.createGzip({ level:zlib.constants.Z_BEST_SPEED })).pipe(res) : source.pipe(res);
 });
 if (require.main === module) staticServer.listen(Number(process.env.PORT || 3000), () => console.log(`Ghazal listening on http://localhost:${process.env.PORT || 3000}`));
 module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, cacheRemoteCovers, storeCover, COVERS_DIR };
