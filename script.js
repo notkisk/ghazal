@@ -720,8 +720,8 @@ function openCoverZoom(button) {
   const src = button.dataset.zoomCover; if (!src) return;
   document.getElementById('cover-zoom-overlay')?.remove();
   const title = $('#book-page-title')?.textContent || 'غلاف الكتاب';
-  document.body.insertAdjacentHTML('beforeend', `<div class="cover-zoom-overlay" id="cover-zoom-overlay" role="dialog" aria-modal="true" aria-label="غلاف ${escapeHtml(title)}"><button class="cover-zoom-close" type="button" aria-label="إغلاق التكبير">×</button><figure><img src="${escapeHtml(src)}" alt="غلاف ${escapeHtml(title)}" /><figcaption>${escapeHtml(title)}<small>انقر خارج الغلاف أو اضغط Escape للإغلاق</small></figcaption></figure></div>`);
-  const overlay = $('#cover-zoom-overlay'); document.body.classList.add('cover-zoom-open'); overlay.addEventListener('click', event => { if (event.target === overlay || event.target.closest('.cover-zoom-close')) { overlay.remove(); document.body.classList.remove('cover-zoom-open'); } }); overlay.querySelector('.cover-zoom-close').focus();
+  document.body.insertAdjacentHTML('beforeend', `<div class="cover-zoom-overlay" id="cover-zoom-overlay" role="dialog" aria-modal="true" aria-label="غلاف ${escapeHtml(title)}"><button class="cover-zoom-close" type="button" aria-label="إغلاق التكبير">×</button><figure><img src="${escapeHtml(src)}" alt="غلاف ${escapeHtml(title)}" /><figcaption>${escapeHtml(title)}<small>انقر على الغلاف أو خارجه، أو اضغط Escape للإغلاق</small></figcaption></figure></div>`);
+  const overlay = $('#cover-zoom-overlay'); document.body.classList.add('cover-zoom-open'); overlay.addEventListener('click', event => { if (event.target === overlay || event.target.closest?.('.cover-zoom-close, figure img')) { overlay.remove(); document.body.classList.remove('cover-zoom-open'); } }); overlay.querySelector('.cover-zoom-close').focus();
 }
 function renderPublisherPage(name) {
   const publisher = publisherByName(name);
