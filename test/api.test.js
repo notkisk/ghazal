@@ -95,6 +95,19 @@ test('newsletter subscriptions are normalized and idempotent in SQLite', () => {
   assert.throws(() => subscribeNewsletter('not-an-email'), /invalid_email/);
 });
 
+test('newsletter API persists subscriptions and exposes the list to owners only', async () => {
+  const base = await listen(); const token = await ownerToken(base);
+  const subscribed = await fetch(`${base}/api/newsletter`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ email:'Dashboard.Reader@example.com' }) });
+  assert.equal(subscribed.status, 201);
+  const listed = await fetch(`${base}/api/admin/newsletter`, { headers:{ authorization:`Bearer ${token}` } });
+  assert.equal(listed.status, 200);
+  const payload = await listed.json();
+  assert.ok(payload.subscribers.some(item => item.email === 'dashboard.reader@example.com'));
+  const denied = await fetch(`${base}/api/admin/newsletter`);
+  assert.equal(denied.status, 401);
+  await closeServer();
+});
+
 test('permissions separate owner access from limited staff access', () => {
   const staff = { role:'admin', permissions_json:JSON.stringify({ view_orders:true, update_orders:false }) };
   assert.equal(can(staff, 'view_orders'), true);

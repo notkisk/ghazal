@@ -357,6 +357,11 @@ async function api(req, res, url) {
       subscribeNewsletter(email, body.source);
       return send(res, 201, { ok:true, subscribed:true });
     }
+    if (req.method === 'GET' && url.pathname === '/api/admin/newsletter') {
+      const owner = requireRole(req, res, 'owner'); if (!owner) return;
+      const subscribers = db.prepare('SELECT email,source,created_at,updated_at FROM newsletter_subscribers ORDER BY created_at DESC,email COLLATE NOCASE').all();
+      return send(res, 200, { subscribers });
+    }
     if (req.method === 'GET' && url.pathname === '/api/orders/lookup') { const ref = String(url.searchParams.get('reference') || '').trim(); if (!/^GZ-[A-Z0-9-]{8,32}$/.test(ref)) return send(res, 400, { error:'invalid_reference' }); const order = db.prepare('SELECT * FROM orders WHERE reference=?').get(ref); if (!order) return send(res, 404, { error:'not_found' }); return send(res, 200, publicOrderView(order)); }
     const user = requireRole(req, res); if (!user) return;
     if (req.method === 'POST' && url.pathname === '/api/admin/users') { const owner = requirePermission(req,res,'manage_staff'); if (!owner) return; const body = await readBody(req); const email = String(body.email || '').trim().toLowerCase(); const password = String(body.password || ''); const role = body.role === 'owner' ? 'owner' : 'admin'; const permissions = role === 'owner' ? permissionsFor({role:'owner'}) : Object.fromEntries(permissionNames.map(name => [name, Boolean(body.permissions?.[name])])); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12) return send(res,400,{error:'invalid_user'}); if (db.prepare('SELECT 1 FROM users WHERE email=?').get(email)) return send(res,409,{error:'duplicate_user'}); const result = db.prepare('INSERT INTO users (email,password_hash,role,permissions_json,created_at) VALUES (?,?,?,?,?)').run(email,passwordHash(password),role,json(permissions),now()); audit(owner,'create','user',result.lastInsertRowid,{email,role,permissions}); return send(res,201,{user:{id:result.lastInsertRowid,email,role,permissions}}); }
