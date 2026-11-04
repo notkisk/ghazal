@@ -60,6 +60,7 @@ let publisherFeatures = readStorage('ghazal.publisherFeatures.v1', []);
 let bestSellerBookIds = [];
 let catalogBookGenres = [];
 let authorSpotlight = null;
+let catalogLoaded = false;
 if (window.location.protocol !== 'file:') fetch('/api/collections').then(response => response.ok ? response.json() : null).then(payload => { if (payload?.collections?.length) { collections = payload.collections; if (document.readyState !== 'loading') { renderHomeShelves(); if (location.hash.startsWith('#collection/')) showRoute(); } } }).catch(() => {});
 window.addEventListener('storage', event => { if (event.key === 'ghazal.customBooks.v1' || event.key === 'ghazal.customPublishers.v1' || event.key === 'ghazal.genres.v1' || event.key === 'ghazal.discounts.v1' || event.key === 'ghazal.collections.v1') location.reload(); });
 let discounts = readStorage('ghazal.discounts.v1', []);
@@ -77,6 +78,7 @@ function applyCatalogPayload(payload) {
   bestSellerBookIds = payload?.bestSellerBookIds || [];
   authorSpotlight = payload?.authorSpotlight || null;
   publisherFeatures = payload?.publisherFeatures || [];
+  catalogLoaded = true;
   renderCategoryUI(); renderDepartmentLinks(); renderPublisherGrid(); renderHeroArt(); renderBooks();
   renderFeaturedSelections(); renderHomeShelves(); renderFeaturedPublishers();
   if (location.hash === '#catalog') renderCatalogPage();
@@ -115,7 +117,7 @@ function renderPublisherGrid() {
   if (!section || !target) return;
   const list = publishers.filter(publisher => publisher && publisher.name).slice(0, 8);
   section.hidden = !list.length;
-  target.innerHTML = list.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${escapeHtml(publisher.logo || publisher.name.slice(0, 1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('');
+  target.innerHTML = list.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${publisher.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? `<img src="${escapeHtml(publisher.logo)}" alt="شعار ${escapeHtml(publisher.name)}" />` : escapeHtml(publisher.logo || publisher.name.slice(0, 1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('');
 }
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) window.GhazalAPI.catalog().then(applyCatalogPayload).catch(() => {});
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) {
@@ -715,9 +717,9 @@ function renderBookPage(id) {
 }
 function renderPublisherPage(name) {
   const publisher = publisherByName(name);
-  if (!publisher) { location.hash = '#publishers'; return; }
+  if (!publisher) { if (catalogLoaded) location.hash = '#publishers'; return; }
   publisherQuery = ''; publisherFilter = 'all'; publisherGenre = 'all';
-  const logo = publisher.logo?.startsWith('data:') ? `<img src="${publisher.logo}" alt="شعار ${escapeHtml(publisher.name)}" />` : escapeHtml(publisher.logo || publisher.name.slice(0, 1));
+  const logo = publisher.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? `<img src="${escapeHtml(publisher.logo)}" alt="شعار ${escapeHtml(publisher.name)}" />` : escapeHtml(publisher.logo || publisher.name.slice(0, 1));
   const publisherFilters = [...catalogBookGenres, ...publisherBooks(publisher.name).map(book => book.genre).filter(Boolean)].filter((genre, index, list) => list.indexOf(genre) === index).sort((a,b) => a.localeCompare(b, 'ar')).map(genre => ({ value:`genre:${genre}`, label:genre }));
   $('#publisher-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى الفهرس</a><div class="profile-header"><div class="profile-logo" aria-hidden="true">${logo}</div><div><p class="eyebrow">دار نشر / ملف الناشر</p><h1 class="profile-title" id="publisher-page-title">${escapeHtml(publisher.name)}</h1><p>${escapeHtml(publisher.description)}</p><small>${escapeHtml(publisher.city)} · ${escapeHtml(publisher.since)}</small></div></div><div class="profile-books"><div class="card-heading"><h2>كتب <em>الدار</em></h2><span id="publisher-count" class="catalog-summary"></span></div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="publisher-search" type="search" placeholder="ابحث داخل إصدارات الدار" /></label><select id="publisher-sort" aria-label="ترتيب إصدارات الدار"><option value="featured">الأحدث</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option></select></div><label class="publisher-genre-filter">التصنيف أو النوع<select id="publisher-genre-filter"><option value="all">كل الإصدارات</option>${publisherFilters.map(filter => `<option value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)}</option>`).join('')}</select></label><div class="catalog-grid" id="publisher-books"></div></div>`;
   const update = () => { const [filterType, filterValue] = publisherGenre.split(':'); let list = publisherBooks(publisher.name).filter(book => (publisherGenre === 'all' || (filterType === 'category' ? book.category === filterValue : genreMatches(book, filterValue))) && (!publisherQuery || normalize(`${book.title} ${book.author} ${book.genre}`).includes(normalize(publisherQuery)))); const sort = $('#publisher-sort').value; if (sort === 'title') list.sort((a,b) => a.title.localeCompare(b.title, 'ar')); if (sort === 'price-low') list.sort((a,b) => a.price - b.price); $('#publisher-count').textContent = `${list.length} إصدارات`; renderProfileBooks(list, $('#publisher-books')); $('#publisher-genre-filter').value = publisherGenre; };
@@ -776,7 +778,7 @@ function renderDepartmentsPage() {
   observeReveals();
 }
 function renderPublishersPage() {
-  $('#publishers-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / شركاء الكتاب</p><h1 id="publishers-page-title">دور <em>النشر</em></h1><p>اكتشف مشاريع الناشرين والكتب المتاحة من كل دار.</p></div></div><div class="publisher-grid page-publisher-grid">${publishers.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${escapeHtml(publisher.logo || publisher.name.slice(0,1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('')}</div>`;
+  $('#publishers-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / شركاء الكتاب</p><h1 id="publishers-page-title">دور <em>النشر</em></h1><p>اكتشف مشاريع الناشرين والكتب المتاحة من كل دار.</p></div></div><div class="publisher-grid page-publisher-grid">${publishers.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${publisher.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? `<img src="${escapeHtml(publisher.logo)}" alt="شعار ${escapeHtml(publisher.name)}" />` : escapeHtml(publisher.logo || publisher.name.slice(0,1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('')}</div>`;
   observeReveals();
 }
 function renderJournalPage() {
@@ -887,7 +889,7 @@ function renderFeaturedPublishers() {
   const target = document.getElementById('publisher-featured'); if (!target) return;
   const active = (publisherFeatures || []).filter(item => item.active !== false).map(item => ({ ...item, books: books.filter(book => book.publisher === item.publisher) }));
   target.hidden = !active.length;
-  target.innerHTML = active.map(item => `<article class="publisher-feature publisher-feature--${escapeHtml(item.id)}" style="--publisher-accent:${escapeHtml(item.accent || '#8f5e3b')};--publisher-surface:${escapeHtml(item.surface || '#eee2ce')};--publisher-ink:${escapeHtml(item.ink || '#1b1915')}"><div class="publisher-feature-visual" id="publisher-shelf-${escapeHtml(item.id)}"></div><div class="publisher-feature-copy">${item.logo ? `<div class="publisher-feature-logo"><img src="${escapeHtml(item.logo)}" alt="شعار ${escapeHtml(item.publisher)}" /></div>` : ''}<p class="publisher-feature-kicker">${escapeHtml(item.slogan || item.kicker || 'دار نشر مميزة')}</p><h2>${escapeHtml(item.publisher)}</h2><p class="publisher-feature-description">${escapeHtml(item.description || '')}</p><a class="publisher-feature-link" href="#publisher/${encodeURIComponent(item.publisher)}">كل إصدارات الدار <span>←</span></a></div></article>`).join('');
+  target.innerHTML = active.map(item => { const publisher = publishers.find(entry => entry.name === item.publisher); const logo = item.logo || (publisher?.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? publisher.logo : ''); return `<article class="publisher-feature publisher-feature--${escapeHtml(item.id)}" style="--publisher-accent:${escapeHtml(item.accent || '#8f5e3b')};--publisher-surface:${escapeHtml(item.surface || '#eee2ce')};--publisher-ink:${escapeHtml(item.ink || '#1b1915')}"><div class="publisher-feature-visual" id="publisher-shelf-${escapeHtml(item.id)}"></div><div class="publisher-feature-copy">${logo ? `<div class="publisher-feature-logo"><img src="${escapeHtml(logo)}" alt="شعار ${escapeHtml(item.publisher)}" /></div>` : `<div class="publisher-feature-mark" aria-hidden="true">${escapeHtml(publisher?.logo || item.mark || item.publisher.slice(0,1))}</div>`}<p class="publisher-feature-kicker">${escapeHtml(item.kicker || 'دار نشر مميزة')}</p><h2>${escapeHtml(item.publisher)}</h2><p class="publisher-feature-description">${escapeHtml(item.description || '')}</p><a class="publisher-feature-link" href="#publisher/${encodeURIComponent(item.publisher)}">كل إصدارات الدار <span>←</span></a></div></article>`; }).join('');
   active.forEach(item => {
     renderCarousel(`publisher-shelf-${item.id}`, `publisher-${item.id}`, item.books);
   });

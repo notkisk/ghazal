@@ -190,6 +190,22 @@ const configuredPassword = process.env.GHAZAL_ADMIN_PASSWORD;
 if (!db.prepare('SELECT 1 FROM users LIMIT 1').get() && configuredPassword) db.prepare('INSERT INTO users (email,password_hash,role,created_at) VALUES (?,?,?,?)').run(process.env.GHAZAL_ADMIN_EMAIL || 'owner@alghazal.local', passwordHash(configuredPassword), 'owner', now());
 const emptyContent = { genres:'{}', bookGenres:'[]', discounts:'[]', featured:'[]', authorProfiles:'{}', publisherFeatures:'[]' };
 for (const [key, value] of Object.entries(emptyContent)) if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get(key)) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run(key, value, now());
+// The clean-slate catalog migration removed the old in-code spotlight defaults.
+// Restore those four original designs once, from the values shipped before the
+// reset, without overwriting any spotlight configuration an owner has saved.
+if (!db.prepare("SELECT 1 FROM store_content WHERE key='publisherFeaturesRestored'").get()) {
+  const saved = contentValue('publisherFeatures', []);
+  if (!Array.isArray(saved) || !saved.length) {
+    const restored = [
+      { id:'mada', publisher:'دار المدى', active:true, layoutVersion:3, slogan:'بيت الثقافة والإبداع', kicker:'أدبٌ وفكرٌ وفنون', description:'رفّ من الكتب التي تصنع ذائقة، وتترك أثرًا أبعد من الصفحة الأخيرة.', accent:'#e51c2a', surface:'#f4d8c8', ink:'#251b19', mark:'م' },
+      { id:'jamal', publisher:'منشورات الجمل', active:true, slogan:'أصواتٌ من العالم', kicker:'أصواتٌ لا تشبه سواها', description:'دار عريقة في الترجمة الأدبية والفلسفية، وكتب تمنح القارئ فرصة الإصغاء إلى أصوات مختلفة.', accent:'#bd1d2d', surface:'#e9d8b9', ink:'#271914', mark:'ج' },
+      { id:'arab-network', publisher:'الشبكة العربية للأبحاث والنشر', active:true, slogan:'بوابتك نحو عالم المعرفة', kicker:'معرفةٌ عربيةٌ رصينة', description:'كتب الفكر والتاريخ والسياسة التي تمنح السؤال العربي مساحة أوسع.', accent:'#2e579a', surface:'#dbe8ef', ink:'#18243b', mark:'ش' },
+      { id:'rafidain', publisher:'دار الرافدين', active:true, slogan:'من وادي الرافدين بدأت الكتابة والمدنية', kicker:'للكتاب العربي الجميل', description:'إصدارات تحمل حيوية المكتبة العربية، بين التراث والقراءة المعاصرة.', accent:'#20205e', surface:'#e5e1ee', ink:'#171735', mark:'ر' }
+    ];
+    db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('publisherFeatures', json(restored), now());
+  }
+  db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('publisherFeaturesRestored', 'true', now());
+}
 
 const migratedCovers = migrateEmbeddedCovers();
 if (migratedCovers) console.log(`Ghazal: migrated ${migratedCovers} embedded cover(s) to ${COVERS_DIR}`);
