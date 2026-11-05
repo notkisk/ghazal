@@ -60,6 +60,11 @@ let featuredBookIds = readStorage('ghazal.featuredBooks.v1', []);
 let publisherFeatures = readStorage('ghazal.publisherFeatures.v1', []);
 let homeSections = readStorage('ghazal.homeSections.v1', []);
 let bestSellerBookIds = [];
+// Until the store has confirmed orders, the homepage best-seller carousel shows
+// a random in-stock selection. The key keeps the picks stable across catalog
+// refreshes while still reshuffling when the shelf itself changes.
+let bestsellerFallbackIds = [];
+let bestsellerFallbackKey = '';
 let catalogBookGenres = [];
 let authorSpotlight = null;
 let catalogLoaded = false;
@@ -228,6 +233,20 @@ function renderShelfGrid(targetId, list) {
   const target = document.getElementById(targetId); if (!target) return;
   const items = list.filter(Boolean).slice(0, 12);
   target.innerHTML = items.length ? `<div class="shelf-grid">${items.map(shelfCardTemplate).join('')}</div>` : '';
+}
+function bestsellerFallbackBooks() {
+  const key = books.map(book => String(book.id)).join('|');
+  if (key !== bestsellerFallbackKey) {
+    bestsellerFallbackKey = key;
+    const inStock = books.filter(book => Number(book.stock) > 0);
+    const pool = [...(inStock.length ? inStock : books)];
+    for (let index = pool.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      [pool[index], pool[swap]] = [pool[swap], pool[index]];
+    }
+    bestsellerFallbackIds = pool.slice(0, 8).map(book => book.id);
+  }
+  return bestsellerFallbackIds.map(id => byId[id]).filter(Boolean);
 }
 function shelfStep(viewport) {
   const card = viewport.querySelector('.shelf-card');
@@ -790,7 +809,7 @@ function renderGenrePage(category) {
 }
 function renderBestsellersPage() {
   const ranked = bestSellerBookIds.map(id => byId[id]).filter(Boolean);
-  const selected = ranked.length ? ranked : books.slice(0, 8);
+  const selected = ranked.length ? ranked : bestsellerFallbackBooks();
   $('#bestsellers-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="page-hero genre-hero"><div><p class="eyebrow">الغزال / من رفوف القراء</p><h1 id="bestsellers-page-title">الأكثر <em>قراءةً</em></h1><p>العناوين التي يعود إليها القراء مرة بعد مرة، وتبقى في الحديث بعد الصفحة الأخيرة.</p></div><span class="collection-count">${selected.length} كتب</span></div><div class="catalog-grid">${selected.map(cardTemplate).join('')}</div>`;
   observeReveals();
   trackMeta('ViewContent', { content_type: 'product_group', content_name: 'الأكثر قراءة', content_ids: selected.map(book => book.id) });
@@ -908,7 +927,7 @@ function renderHomeShelves() {
   const anchor = document.getElementById('new') || document.getElementById('publisher-featured');
   if (!$('#home-book-shelves')) {
     if (!anchor?.parentNode) return;
-    anchor.insertAdjacentHTML('beforebegin', `<section class="home-book-shelves section-pad wrap" id="home-book-shelves"><div class="home-shelf-block home-bestseller-shelf"><div class="home-shelf-heading"><div><h3>الأكثر قراءة الآن</h3><p>عناوين تعود إليها الأيدي مرة بعد مرة.</p></div><a class="underlined-link" href="#catalog">كل الكتب ↖</a></div><div id="home-bestseller-grid"></div></div><div id="home-author-spotlight"></div><div id="home-collection-shelves"></div><div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>قراءة جميلة بسعر هادئ</h3><p>أفضل ما تجده بـ ٢٠٠٠ د.ج أو أقل.</p></div><a class="underlined-link" href="#catalog">تصفح حسب السعر ↖</a></div><div id="home-value-grid"></div></div></section>`);
+    anchor.insertAdjacentHTML('beforebegin', `<section class="home-book-shelves section-pad wrap" id="home-book-shelves"><div class="home-shelf-block home-bestseller-shelf"><div class="home-shelf-heading"><div><h3>الأكثر قراءة الآن</h3><p>عناوين تعود إليها الأيدي مرة بعد مرة.</p></div><a class="underlined-link" href="#bestsellers">كل الأكثر قراءة ↖</a></div><div id="home-bestseller-grid"></div></div><div id="home-author-spotlight"></div><div id="home-collection-shelves"></div><div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>قراءة جميلة بسعر هادئ</h3><p>أفضل ما تجده بـ ٢٠٠٠ د.ج أو أقل.</p></div><a class="underlined-link" href="#catalog">تصفح حسب السعر ↖</a></div><div id="home-value-grid"></div></div></section>`);
   }
   const featuredIds = new Set((featuredBookIds || []).map(String));
   const bestSellerIds = new Set((bestSellerBookIds || []).map(String));
@@ -921,8 +940,10 @@ function renderHomeShelves() {
   $('#home-author-spotlight').innerHTML = authorSpotlight ? `<article class="author-spotlight"><div class="author-spotlight-art">${authorSpotlight.photo ? `<img src="${authorSpotlight.photo.startsWith('data:') ? authorSpotlight.photo : escapeHtml(authorSpotlight.photo)}" alt="${escapeHtml(authorSpotlight.name)}" loading="lazy" />` : `<span>${escapeHtml(authorSpotlight.name).slice(0,1)}</span>`}</div><div class="author-spotlight-copy"><p class="eyebrow">من رفوف الغزال</p><h2>صوت <em>${escapeHtml(authorSpotlight.name)}</em></h2><p>${escapeHtml(authorSpotlight.bio)}</p><a class="underlined-link" href="#author/${encodeURIComponent(authorSpotlight.name)}">اكتشف كتبه (${spotlightBooks.length}) ↖</a></div><div class="author-spotlight-books">${spotlightBooks.slice(0,3).map(cardTemplate).join('')}</div></article>` : '';
   $('#home-collection-shelves').innerHTML = shelves.map((collection, index) => { const href = collection.id === 'collection-recommended' ? '#catalog' : `#collection/${encodeURIComponent(collection.slug)}`; return `<div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>${escapeHtml(collection.title)}</h3><p>${escapeHtml(collection.description || '')}</p></div><a class="underlined-link" href="${href}">عرض الكل ↖</a></div><div id="home-collection-grid-${index}"></div></div>`; }).join('');
   shelves.forEach((collection, index) => renderCarousel(`home-collection-grid-${index}`, `collection-${index}`, collection.bookIds.map(id => byId[id]).filter(book => book && !bestSellerIds.has(String(book.id))).slice(0, 8)));
-  const bestsellers = bestSellerBookIds.map(id => byId[id]).filter(Boolean);
-  renderShelfGrid('home-bestseller-grid', bestsellers);
+  const bestsellers = bestSellerBookIds.length
+    ? bestSellerBookIds.map(id => byId[id]).filter(Boolean)
+    : bestsellerFallbackBooks();
+  renderCarousel('home-bestseller-grid', 'bestseller', bestsellers);
   document.querySelector('.home-bestseller-shelf')?.toggleAttribute('hidden', !bestsellers.length);
   $('#home-collection-shelves').hidden = !shelves.length;
   const bestsellerRank = new Map(bestSellerBookIds.map((id, index) => [String(id), index]));

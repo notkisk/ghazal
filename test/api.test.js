@@ -472,6 +472,41 @@ test('collection edits, book changes, and visibility toggles persist', async () 
   }
 });
 
+test('best sellers only include confirmed orders', () => {
+  const bookId = 'brief-time';
+  assert.ok(!catalogPayload().bestSellerBookIds.includes(bookId));
+  const reference = createOrder({ customer:{customer:'اختبار الأكثر قراءة',phone:'0555000111'}, items:[{id:bookId,qty:1}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',price:0} });
+  assert.ok(!catalogPayload().bestSellerBookIds.includes(bookId));
+  transitionOrder(reference, 'confirmed', 'اختبار الأكثر قراءة', { id:1 });
+  assert.ok(catalogPayload().bestSellerBookIds.includes(bookId));
+});
+
+test('deleting a collection removes it and clears homepage references', async () => {
+  const base = await listen();
+  const authorization = `Bearer ${await ownerToken(base)}`;
+  const headers = { 'content-type':'application/json', authorization };
+  const original = db.prepare("SELECT value_json FROM store_content WHERE key='homeSections'").get();
+  let id;
+  try {
+    const created = await fetch(`${base}/api/admin/collections`, { method:'POST', headers, body:JSON.stringify({ slug:`delete-test-${Date.now()}`, title:'مجموعة للحذف', description:'', bookIds:['stranger'], homepage:false, active:true }) });
+    assert.equal(created.status, 201);
+    id = (await created.json()).collection.id;
+    const saved = await fetch(`${base}/api/admin/catalog`, { method:'PUT', headers, body:JSON.stringify({ homeSections:[{ id:'section-delete-test', title:'قسم مرتبط بالمجموعة', type:'collection', collectionId:id, placement:'after-shelves', active:true }] }) });
+    assert.equal(saved.status, 200);
+    const removed = await fetch(`${base}/api/admin/collections/${encodeURIComponent(id)}`, { method:'DELETE', headers });
+    assert.equal(removed.status, 200);
+    assert.equal(db.prepare('SELECT 1 FROM collections WHERE id=?').get(id), undefined);
+    const stored = JSON.parse(db.prepare("SELECT value_json FROM store_content WHERE key='homeSections'").get().value_json);
+    assert.equal(stored.find(section => section.id === 'section-delete-test').collectionId, '');
+    const missing = await fetch(`${base}/api/admin/collections/${encodeURIComponent(id)}`, { method:'DELETE', headers });
+    assert.equal(missing.status, 404);
+  } finally {
+    if (original) db.prepare("UPDATE store_content SET value_json=?,updated_at=? WHERE key='homeSections'").run(original.value_json, new Date().toISOString());
+    if (id) db.prepare('DELETE FROM collections WHERE id=?').run(id);
+    await closeServer();
+  }
+});
+
 test('catalog responses are gzipped for clients that accept it', async () => {
   const base = await listen();
   try {

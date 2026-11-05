@@ -57,8 +57,6 @@ test('dashboard manages custom homepage sections without a carousel item cap', (
   const script = read('script.js');
   const admin = read('admin.js');
   const server = read('server.js');
-  const index = read('index.html');
-  const adminHtml = read('admin.html');
   // Storefront: sections render from the catalog payload at named anchors.
   assert.match(script, /let homeSections = readStorage\('ghazal\.homeSections\.v1', \[\]\)/);
   assert.match(script, /homeSections = Array\.isArray\(payload\?\.homeSections\) \? payload\.homeSections : \[\]/);
@@ -82,13 +80,39 @@ test('dashboard manages custom homepage sections without a carousel item cap', (
   assert.match(admin, /bookIds:collectionSelectedIds\(form\)/);
   assert.doesNotMatch(admin, /input\[name="bookIds"\]:checked/);
   assert.doesNotMatch(admin, /type="checkbox"[^>]*data-collection-book/);
+  // Picker rows show the cover and live availability.
+  assert.match(admin, /collection-book-cover/);
+  assert.match(admin, /const stockLabel = book =>/);
+  assert.match(admin, /المتوفر: \$\{available\}/);
+  // Collections can be hidden and deleted from the dashboard.
+  assert.match(admin, /data-delete-collection=/);
+  assert.match(admin, /window\.GhazalAPI\.deleteCollection/);
+  assert.match(admin, /function collectionErrorMessage\(/);
   // Server: defaults, validation, and placement list.
   assert.match(server, /const HOME_SECTION_PLACEMENTS = \[/);
   assert.match(server, /function sanitizeHomeSections\(/);
   assert.match(server, /homeSections: contentValue\('homeSections', \[\]\)/);
-  // Cache-busting versions cover the edited assets.
-  assert.match(index, /script\.js\?v=20261105-3/);
-  assert.match(adminHtml, /admin\.js\?v=20261105-7/);
+});
+
+test('homepage best sellers use confirmed orders and a stable carousel fallback', () => {
+  const script = read('script.js');
+  const server = read('server.js');
+  // Confirmed orders are the only sales signal.
+  assert.match(server, /orders\.status='confirmed'/);
+  assert.match(script, /function bestsellerFallbackBooks\(\)/);
+  assert.match(script, /bestsellerFallbackKey/);
+  assert.match(script, /bestSellerBookIds\.length[\s\S]{0,120}bestsellerFallbackBooks\(\)/);
+  assert.match(script, /renderCarousel\('home-bestseller-grid', 'bestseller', bestsellers\)/);
+});
+
+test('cache-busting versions match the latest edited assets', () => {
+  const index = read('index.html');
+  const adminHtml = read('admin.html');
+  assert.match(index, /script\.js\?v=20261105-4/);
+  assert.match(index, /api\.js\?v=20261105-3/);
+  assert.match(adminHtml, /admin\.js\?v=20261105-8/);
+  assert.match(adminHtml, /api\.js\?v=20261105-3/);
+  assert.match(adminHtml, /dashboard\.css\?v=20261105-11/);
 });
 
 test('backup script never mutates the database at require time', () => {

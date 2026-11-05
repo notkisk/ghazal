@@ -54,17 +54,21 @@ body[data-role="admin"] [data-owner-finance],body[data-role="admin"] .dashboard-
 .collection-picker-hint{margin:0;padding:14px;border:1px dashed #d5c4aa;background:#fbf8f1;color:var(--muted);font-size:11px;line-height:1.7}
 .collection-picker-count{margin:0;color:var(--muted);font-size:10px}
 .collection-picker-results{display:grid;gap:6px;max-height:320px;overflow:auto;padding-inline-end:3px}
-.collection-book-result{display:flex;justify-content:space-between;align-items:center;gap:14px;width:100%;padding:10px 12px;border:1px solid #e1d4c1;background:#fbf8f1;color:var(--ink);font:11px var(--sans);text-align:start;cursor:pointer;transition:background .15s,border-color .15s}
+.collection-book-result{display:grid;grid-template-columns:42px 1fr auto;justify-content:space-between;align-items:center;gap:12px;width:100%;padding:9px 11px;border:1px solid #e1d4c1;background:#fbf8f1;color:var(--ink);font:11px var(--sans);text-align:start;cursor:pointer;transition:background .15s,border-color .15s}
 .collection-book-result:hover{background:#f5eddf;border-color:#cdb99b}
 .collection-book-result.is-added{background:#eaf2e8;border-color:#bdd4c1}
-.collection-book-result>span:first-child{display:grid;gap:3px;min-width:0}
-.collection-book-result strong{font-weight:600;overflow:hidden;text-overflow:ellipsis}
-.collection-book-result small{color:var(--muted);font-size:9px;overflow:hidden;text-overflow:ellipsis}
+.collection-book-cover{width:42px;height:60px;object-fit:cover;background:#e5d4b8;border:1px solid #e3d6c2}
+.collection-book-info{display:grid;gap:2px;min-width:0;text-align:start}
+.collection-book-result strong,.collection-selected-book strong{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.collection-book-result small,.collection-selected-book small{color:var(--muted);font-size:9px;overflow:hidden;text-overflow:ellipsis}
+.collection-book-stock{color:#49745b!important;font-weight:600}
+.collection-book-stock.is-out{color:#9b3d33!important}
 .collection-book-result-action{flex:none;padding:4px 10px;border:1px solid currentColor;border-radius:999px;color:var(--brown);font-size:9px;white-space:nowrap}
 .collection-book-result.is-added .collection-book-result-action{color:#49745b}
 .collection-selected-list{display:grid;gap:6px;max-height:300px;overflow:auto;padding-inline-end:3px}
-.collection-selected-book{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:10px;padding:9px 11px;background:#f7f0e3;border:1px solid #e1d4c1}
+.collection-selected-book{display:grid;grid-template-columns:24px 34px 1fr auto;align-items:center;gap:9px;padding:8px 10px;background:#f7f0e3;border:1px solid #e1d4c1}
 .collection-selected-book>span{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#e5d7c3;color:var(--brown);font-size:10px}
+.collection-selected-book .collection-book-cover{width:34px;height:48px}
 .collection-selected-book strong,.collection-selected-book small{display:block}
-.collection-selected-book strong{font-size:11px;overflow:hidden;text-overflow:ellipsis}
-.collection-selected-book small{color:var(--muted);font-size:9px;margin-top:2px;overflow:hidden;text-overflow:ellipsis}
+.collection-selected-book strong{font-size:11px}
+.collection-selected-book small{margin-top:2px}
