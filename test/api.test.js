@@ -448,6 +448,30 @@ test('catalog sync persists and sanitizes custom home sections', async () => {
   }
 });
 
+test('collection edits, book changes, and visibility toggles persist', async () => {
+  const base = await listen();
+  const authorization = `Bearer ${await ownerToken(base)}`;
+  const headers = { 'content-type':'application/json', authorization };
+  let id;
+  try {
+    const created = await fetch(`${base}/api/admin/collections`, { method:'POST', headers, body:JSON.stringify({ slug:`patch-test-${Date.now()}`, title:'مجموعة قابلة للتعديل', description:'وصف', bookIds:['stranger'], homepage:false, active:true }) });
+    assert.equal(created.status, 201);
+    id = (await created.json()).collection.id;
+    const edited = await fetch(`${base}/api/admin/collections/${encodeURIComponent(id)}`, { method:'PATCH', headers, body:JSON.stringify({ title:'مجموعة معدّلة', description:'وصف جديد', bookIds:['stranger','meaning'], homepage:true, active:true }) });
+    assert.equal(edited.status, 200);
+    const editedCollection = (await edited.json()).collection;
+    assert.equal(editedCollection.title, 'مجموعة معدّلة');
+    assert.deepEqual(editedCollection.bookIds, ['stranger','meaning']);
+    assert.equal(editedCollection.homepage, true);
+    const hidden = await fetch(`${base}/api/admin/collections/${encodeURIComponent(id)}`, { method:'PATCH', headers, body:JSON.stringify({ active:false }) });
+    assert.equal(hidden.status, 200);
+    assert.equal((await hidden.json()).collection.active, false);
+  } finally {
+    if (id) db.prepare('DELETE FROM collections WHERE id=?').run(id);
+    await closeServer();
+  }
+});
+
 test('catalog responses are gzipped for clients that accept it', async () => {
   const base = await listen();
   try {

@@ -74,13 +74,21 @@ test('dashboard manages custom homepage sections without a carousel item cap', (
   assert.match(admin, /name="placement"/);
   assert.match(admin, /data-delete-home-section/);
   assert.match(admin, /function persistHomeSections\(/);
+  // Collection editing is search-first: results are clickable rows, not a wall
+  // of checkboxes, and the added-books list supports removal.
+  assert.match(admin, /if \(kind === 'collection'\) setupCollectionBookPicker/);
+  assert.match(admin, /data-collection-book="\$\{esc\(id\)\}"/);
+  assert.match(admin, /const next = selected\.includes\(id\) \? selected\.filter\(item => item !== id\) : \[\.\.\.selected, id\]/);
+  assert.match(admin, /bookIds:collectionSelectedIds\(form\)/);
+  assert.doesNotMatch(admin, /input\[name="bookIds"\]:checked/);
+  assert.doesNotMatch(admin, /type="checkbox"[^>]*data-collection-book/);
   // Server: defaults, validation, and placement list.
   assert.match(server, /const HOME_SECTION_PLACEMENTS = \[/);
   assert.match(server, /function sanitizeHomeSections\(/);
   assert.match(server, /homeSections: contentValue\('homeSections', \[\]\)/);
   // Cache-busting versions cover the edited assets.
   assert.match(index, /script\.js\?v=20261105-3/);
-  assert.match(adminHtml, /admin\.js\?v=20261105-6/);
+  assert.match(adminHtml, /admin\.js\?v=20261105-7/);
 });
 
 test('backup script never mutates the database at require time', () => {
