@@ -411,6 +411,43 @@ test('catalog sync derives publishers, authors, categories, and subcategories fr
   }
 });
 
+test('catalog sync persists and sanitizes custom home sections', async () => {
+  const base = await listen();
+  const stamp = new Date().toISOString();
+  const original = db.prepare("SELECT value_json FROM store_content WHERE key='homeSections'").get();
+  db.prepare('INSERT INTO collections (id,slug,title,description,active,homepage,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)').run('section-test-collection', 'section-test-collection', 'مجموعة الاختبار', '', 1, 0, stamp, stamp);
+  try {
+    const authorization = `Bearer ${await ownerToken(base)}`;
+    const response = await fetch(`${base}/api/admin/catalog`, {
+      method:'PUT',
+      headers:{ 'content-type':'application/json', authorization },
+      body:JSON.stringify({ homeSections:[
+        { id:'section-books', title:'رفّ الاختبار', description:'وصف القسم', type:'books', bookIds:['stranger','missing-book','stranger'], placement:'after-new', active:true },
+        { id:'section-collection', title:'مجموعة الاختبار', type:'collection', collectionId:'section-test-collection', bookIds:['meaning'], placement:'not-a-place', active:false },
+        { id:'section-missing-collection', title:'مجموعة مفقودة', type:'collection', collectionId:'missing-collection', placement:'end', active:true },
+        { id:'section-empty-title', title:'   ', type:'books', bookIds:['meaning'] },
+        { id:'section-books', title:'معرّف مكرر', type:'books', bookIds:['meaning'] }
+      ] })
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.homeSections.length, 3);
+    assert.deepEqual(payload.homeSections[0], { id:'section-books', title:'رفّ الاختبار', description:'وصف القسم', type:'books', collectionId:'', bookIds:['stranger'], placement:'after-new', active:true });
+    assert.deepEqual(payload.homeSections[1], { id:'section-collection', title:'مجموعة الاختبار', description:'', type:'collection', collectionId:'section-test-collection', bookIds:[], placement:'after-shelves', active:false });
+    assert.equal(payload.homeSections[2].collectionId, '');
+    assert.deepEqual(catalogPayload().homeSections, payload.homeSections);
+    const publicCatalog = await (await fetch(`${base}/api/catalog`)).json();
+    assert.deepEqual(publicCatalog.homeSections, payload.homeSections);
+    const stored = JSON.parse(db.prepare("SELECT value_json FROM store_content WHERE key='homeSections'").get().value_json);
+    assert.deepEqual(stored, payload.homeSections);
+  } finally {
+    db.prepare('DELETE FROM collections WHERE id=?').run('section-test-collection');
+    if (original) db.prepare("UPDATE store_content SET value_json=?,updated_at=? WHERE key='homeSections'").run(original.value_json, stamp);
+    else db.prepare("DELETE FROM store_content WHERE key='homeSections'").run();
+    await closeServer();
+  }
+});
+
 test('catalog responses are gzipped for clients that accept it', async () => {
   const base = await listen();
   try {

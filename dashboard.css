@@ -42,3 +42,7 @@ body[data-role="admin"] [data-owner-finance],body[data-role="admin"] .dashboard-
 .publisher-feature-admin-mark{width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--publisher-accent);color:var(--publisher-accent);font:700 25px var(--serif);flex:none}
 .publisher-feature-admin>div{display:grid;gap:4px;flex:1}.publisher-feature-admin strong{font:400 20px var(--serif)}.publisher-feature-admin small{font-size:10px;color:var(--muted)}
 .toggle-control{display:flex;align-items:center;gap:8px;font-size:10px;white-space:nowrap}.toggle-control input{accent-color:var(--brown);width:17px;height:17px}
+.home-section-admin-list .collection-admin-actions{gap:5px}
+.home-section-order{display:flex;gap:4px;justify-content:flex-end}
+.home-section-order .text-button{min-width:27px;padding:2px 6px;border:1px solid #d5c4aa;border-radius:6px;font-size:14px;line-height:1.2}
+.home-section-order .text-button:disabled{opacity:.34;cursor:default}

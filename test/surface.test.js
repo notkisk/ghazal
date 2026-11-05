@@ -53,6 +53,36 @@ test('background catalog refresh does not replay reveal animations', () => {
   assert.match(script, /if \(suppressRevealEntrance\) \{ element\.classList\.add\('is-visible'\); return; \}/);
 });
 
+test('dashboard manages custom homepage sections without a carousel item cap', () => {
+  const script = read('script.js');
+  const admin = read('admin.js');
+  const server = read('server.js');
+  const index = read('index.html');
+  const adminHtml = read('admin.html');
+  // Storefront: sections render from the catalog payload at named anchors.
+  assert.match(script, /let homeSections = readStorage\('ghazal\.homeSections\.v1', \[\]\)/);
+  assert.match(script, /homeSections = Array\.isArray\(payload\?\.homeSections\) \? payload\.homeSections : \[\]/);
+  assert.match(script, /function renderHomeSections\(\)/);
+  assert.match(script, /data-home-section/);
+  assert.match(script, /Number\.MAX_SAFE_INTEGER/);
+  assert.match(script, /customCollectionIds/);
+  // Dashboard: tab, workspace, form controls, and save actions.
+  assert.match(admin, /data-owner-tab="home-sections"/);
+  assert.match(admin, /أقسام الرئيسية/);
+  assert.match(admin, /function renderHomeSectionsWorkspace\(\)/);
+  assert.match(admin, /function setupHomeSectionForm\(/);
+  assert.match(admin, /name="placement"/);
+  assert.match(admin, /data-delete-home-section/);
+  assert.match(admin, /function persistHomeSections\(/);
+  // Server: defaults, validation, and placement list.
+  assert.match(server, /const HOME_SECTION_PLACEMENTS = \[/);
+  assert.match(server, /function sanitizeHomeSections\(/);
+  assert.match(server, /homeSections: contentValue\('homeSections', \[\]\)/);
+  // Cache-busting versions cover the edited assets.
+  assert.match(index, /script\.js\?v=20261105-3/);
+  assert.match(adminHtml, /admin\.js\?v=20261105-6/);
+});
+
 test('backup script never mutates the database at require time', () => {
   const backup = read('scripts/backup-db.js');
   assert.doesNotMatch(backup, /require\(['"]\.\.\/server['"]\)/);

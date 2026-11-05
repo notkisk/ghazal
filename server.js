@@ -301,7 +301,7 @@ function resetCatalogOnce() {
     db.prepare('DELETE FROM books').run();
     db.prepare('DELETE FROM publishers').run();
     db.prepare('DELETE FROM authors').run();
-    for (const key of ['genres','bookGenres','featured','publisherFeatures','authorProfiles']) db.prepare('DELETE FROM store_content WHERE key=?').run(key);
+    for (const key of ['genres','bookGenres','featured','publisherFeatures','authorProfiles','homeSections']) db.prepare('DELETE FROM store_content WHERE key=?').run(key);
     db.prepare('DELETE FROM store_content WHERE key=?').run('catalogReset');
     db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run('catalogReset', json(CATALOG_RESET_VERSION), now());
     db.exec('COMMIT');
@@ -311,7 +311,7 @@ function resetCatalogOnce() {
 if (resetCatalogOnce()) console.log('Ghazal: catalog reset to an empty state (re-import your books to rebuild it)');
 const configuredPassword = process.env.GHAZAL_ADMIN_PASSWORD;
 if (!db.prepare('SELECT 1 FROM users LIMIT 1').get() && configuredPassword) db.prepare('INSERT INTO users (email,password_hash,role,created_at) VALUES (?,?,?,?)').run(process.env.GHAZAL_ADMIN_EMAIL || 'owner@alghazal.local', passwordHash(configuredPassword), 'owner', now());
-const emptyContent = { genres:'{}', bookGenres:'[]', discounts:'[]', featured:'[]', authorProfiles:'{}', publisherFeatures:'[]' };
+const emptyContent = { genres:'{}', bookGenres:'[]', discounts:'[]', featured:'[]', authorProfiles:'{}', publisherFeatures:'[]', homeSections:'[]' };
 for (const [key, value] of Object.entries(emptyContent)) if (!db.prepare('SELECT 1 FROM store_content WHERE key=?').get(key)) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run(key, value, now());
 if (repairCorruptedTextOnce()) console.log('Ghazal: repaired corrupted text left by older imports');
 const DEFAULT_PUBLISHER_FEATURES = [
@@ -370,6 +370,37 @@ if (migratedCovers) console.log(`Ghazal: migrated ${migratedCovers} embedded cov
 function bookList(url) { const q = String(url.searchParams.get('q') || '').trim(); const where = q ? `WHERE title LIKE @q OR author LIKE @q OR publisher LIKE @q OR genre LIKE @q OR isbn LIKE @q` : ''; return db.prepare(`SELECT *, stock-reserved AS available FROM books ${where} ORDER BY title`).all(q ? { q: `%${q}%` } : {}); }
 function collectionList(includeInactive = false) { const collections = db.prepare(`SELECT * FROM collections ${includeInactive ? '' : 'WHERE active=1'} ORDER BY created_at`).all(); return collections.map(collection => ({ ...collection, active: Boolean(collection.active), homepage: Boolean(collection.homepage), bookIds: db.prepare('SELECT book_id FROM collection_books WHERE collection_id=? ORDER BY position').all(collection.id).map(item => item.book_id) })); }
 function contentValue(key, fallback) { const row = db.prepare('SELECT value_json FROM store_content WHERE key=?').get(key); return row ? parse(row.value_json, fallback) : fallback; }
+// Custom homepage carousels. Keep the value list in sync with script.js and
+// admin.js: each key maps to a fixed anchor on the storefront homepage.
+const HOME_SECTION_PLACEMENTS = ['top','after-selections','after-story','after-shelves','after-new','after-publishers-features','after-departments','after-publishers','end'];
+function sanitizeHomeSections(value, bookIds = new Set(), collectionIds = new Set()) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  return value.slice(0, 40).map(section => {
+    if (!section || typeof section !== 'object') return null;
+    const id = String(section.id || '').trim().replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80);
+    if (!id || seen.has(id)) return null;
+    seen.add(id);
+    const title = String(section.title || '').trim().slice(0, 120);
+    if (!title) return null;
+    const type = section.type === 'collection' ? 'collection' : 'books';
+    const collectionId = type === 'collection' ? String(section.collectionId || '').trim() : '';
+    const ids = Array.isArray(section.bookIds)
+      ? [...new Set(section.bookIds.map(item => String(item || '').trim()).filter(item => item && bookIds.has(item)))].slice(0, 500)
+      : [];
+    const placement = HOME_SECTION_PLACEMENTS.includes(section.placement) ? section.placement : 'after-shelves';
+    return {
+      id,
+      title,
+      description: String(section.description || '').trim().slice(0, 300),
+      type,
+      collectionId: collectionIds.has(collectionId) ? collectionId : '',
+      bookIds: type === 'books' ? ids : [],
+      placement,
+      active: section.active !== false
+    };
+  }).filter(Boolean);
+}
 function deriveGenres(books, stored = {}) {
   const genres = {};
   for (const book of books) {
@@ -393,7 +424,7 @@ function catalogPayload() {
   const genres = deriveGenres(books, contentValue('genres', {}));
   const bookGenres = deriveBookGenres(books);
   const authorSpotlight = Object.entries(profiles).map(([name, profile]) => ({ name, ...profile, bookIds: db.prepare('SELECT id FROM books WHERE author=? ORDER BY title').all(name).map(row => row.id) })).filter(author => author.bio && author.bookIds.length >= 2).sort((a,b) => Number(b.featured) - Number(a.featured) || b.bookIds.length - a.bookIds.length)[0] || null;
-  return { books, publishers: db.prepare('SELECT * FROM publishers ORDER BY name').all(), genres, bookGenres, discounts: contentValue('discounts', []), featuredBookIds: fallbackFeatured, publisherFeatures: contentValue('publisherFeatures', []), bestSellerBookIds, bestSellerSales: bestSellerRows, bestSellerWindow: weeklySales.length ? 'weekly' : allTimeSales.length ? 'all-time' : 'none', authorProfiles: profiles, authorSpotlight, collections: collectionList(false) };
+  return { books, publishers: db.prepare('SELECT * FROM publishers ORDER BY name').all(), genres, bookGenres, discounts: contentValue('discounts', []), featuredBookIds: fallbackFeatured, publisherFeatures: contentValue('publisherFeatures', []), homeSections: contentValue('homeSections', []), bestSellerBookIds, bestSellerSales: bestSellerRows, bestSellerWindow: weeklySales.length ? 'weekly' : allTimeSales.length ? 'all-time' : 'none', authorProfiles: profiles, authorSpotlight, collections: collectionList(false) };
 }
 async function sendMetaPurchase(body, reference, total, items, request) {
   const pixel = process.env.META_PIXEL_ID; const token = process.env.META_ACCESS_TOKEN; const eventId = String(body.metaEventId || reference); const previous = db.prepare('SELECT status FROM conversion_events WHERE event_id=?').get(eventId); if (previous?.status === 'sent' || metaEventsInFlight.has(eventId)) return; if (!pixel || !token) { recordConversion(eventId,'Purchase',reference,'meta','skipped',{reason:'not_configured'}); return; }
@@ -577,6 +608,12 @@ async function api(req, res, url) {
         db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('genres',json(genresPayload),stamp);
         db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('bookGenres',json(bookGenresPayload),stamp);
         for (const key of ['discounts','featured','authorProfiles','publisherFeatures']) if (body[key] !== undefined) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run(key,json(body[key]),stamp);
+        if (body.homeSections !== undefined) {
+          const validBookIds = new Set(db.prepare('SELECT id FROM books').all().map(row => String(row.id)));
+          const validCollectionIds = new Set(db.prepare('SELECT id FROM collections').all().map(row => String(row.id)));
+          const homeSections = sanitizeHomeSections(body.homeSections, validBookIds, validCollectionIds);
+          db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('homeSections',json(homeSections),stamp);
+        }
         audit(user,'update','catalog','store',{books:books.length,publishers:publishers.length}); db.exec('COMMIT'); if (books.some(b => /^https?:\/\//i.test(b?.image || ''))) setTimeout(() => cacheRemoteCovers().catch(() => {}), 100); return send(res,200,catalogPayload());
       } catch (error) { db.exec('ROLLBACK'); throw error; }
     }
@@ -625,4 +662,4 @@ const staticServer = http.createServer(async (req,res) => {
   return useGzip ? source.pipe(zlib.createGzip({ level:zlib.constants.Z_BEST_SPEED })).pipe(res) : source.pipe(res);
 });
 if (require.main === module) staticServer.listen(Number(process.env.PORT || 3000), () => console.log(`Ghazal listening on http://localhost:${process.env.PORT || 3000}`));
-module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, repairCorruptedTextOnce, syncPublisherFeatureDesigns, cacheRemoteCovers, storeCover, COVERS_DIR };
+module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, repairCorruptedTextOnce, syncPublisherFeatureDesigns, cacheRemoteCovers, storeCover, sanitizeHomeSections, HOME_SECTION_PLACEMENTS, COVERS_DIR };

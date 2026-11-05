@@ -58,6 +58,7 @@ let collections = readStorage('ghazal.collections.v1', []);
 collections = collections.map(collection => ({ ...collection, bookIds: (collection.bookIds || []).filter(id => byId[id]) }));
 let featuredBookIds = readStorage('ghazal.featuredBooks.v1', []);
 let publisherFeatures = readStorage('ghazal.publisherFeatures.v1', []);
+let homeSections = readStorage('ghazal.homeSections.v1', []);
 let bestSellerBookIds = [];
 let catalogBookGenres = [];
 let authorSpotlight = null;
@@ -105,9 +106,10 @@ function applyCatalogPayload(payload, options = {}) {
     bestSellerBookIds = payload?.bestSellerBookIds || [];
     authorSpotlight = payload?.authorSpotlight || null;
     publisherFeatures = payload?.publisherFeatures || [];
+    homeSections = Array.isArray(payload?.homeSections) ? payload.homeSections : [];
     catalogLoaded = true;
     renderCategoryUI(); renderDepartmentLinks(); renderPublisherGrid(); renderHeroArt(); renderBooks();
-    renderFeaturedSelections(); renderHomeShelves(); renderFeaturedPublishers();
+    renderFeaturedSelections(); renderHomeShelves(); renderHomeSections(); renderFeaturedPublishers();
     if (location.hash === '#catalog') renderCatalogPage();
     // Routes rendered before the asynchronous catalog response have no data.
     // Re-render all catalog-backed pages once the server payload arrives.
@@ -246,9 +248,9 @@ function syncShelfCount(carousel) {
   count.textContent = `${index} / ${total}`;
   carousel.classList.toggle('is-scrollable', maxScroll > 4);
 }
-function renderCarousel(targetId, carouselId, list) {
+function renderCarousel(targetId, carouselId, list, limit = 12) {
   const target = document.getElementById(targetId); if (!target) return;
-  const items = list.filter(Boolean).slice(0, 12);
+  const items = list.filter(Boolean).slice(0, limit);
   if (!items.length) { target.innerHTML = ''; return; }
   target.innerHTML = `<div class="shelf-carousel" data-carousel="${carouselId}"><div class="shelf-carousel-viewport" tabindex="0" role="group" aria-label="رف كتب قابل للتمرير"><div class="shelf-carousel-track">${items.map(shelfCardTemplate).join('')}</div></div><div class="shelf-carousel-controls" dir="rtl"><button class="shelf-carousel-arrow" type="button" data-shelf-prev="${carouselId}" aria-label="الكتب السابقة">→</button><span class="shelf-carousel-count" aria-live="polite">1 / ${items.length}</span><button class="shelf-carousel-arrow" type="button" data-shelf-next="${carouselId}" aria-label="الكتب التالية">←</button></div></div>`;
   const carousel = target.querySelector('.shelf-carousel');
@@ -910,7 +912,8 @@ function renderHomeShelves() {
   }
   const featuredIds = new Set((featuredBookIds || []).map(String));
   const bestSellerIds = new Set((bestSellerBookIds || []).map(String));
-  const homepageCollections = collections.filter(collection => collection.active && collection.homepage).slice(0, 4);
+  const customCollectionIds = new Set(homeSections.filter(section => section.active !== false && section.type === 'collection').map(section => String(section.collectionId || '')));
+  const homepageCollections = collections.filter(collection => collection.active && collection.homepage && !customCollectionIds.has(String(collection.id))).slice(0, 4);
   const fallback = { id: 'collection-recommended', slug: 'recommended', title: 'اختيارات أخرى', description: 'عناوين تستحق أن تجد طريقها إلى رفّك.', bookIds: books.filter(book => !featuredIds.has(String(book.id)) && !bestSellerIds.has(String(book.id))).map(book => book.id) };
   const recommended = books.filter(book => !featuredIds.has(String(book.id)) && !bestSellerIds.has(String(book.id))).slice(0, 8);
   const shelves = homepageCollections.length ? homepageCollections : [fallback];
@@ -933,6 +936,62 @@ function renderHomeShelves() {
   if (valueShelfBlock) valueShelfBlock.hidden = valueBooks.length === 0;
   observeReveals();
 }
+// Dashboard-managed carousel sections. The placement keys are stored with the
+// section and must match the list accepted by server.js and admin.js.
+const HOME_SECTION_PLACEMENTS = [
+  { value:'top', anchor:'#selections', position:'before' },
+  { value:'after-selections', anchor:'#story', position:'before' },
+  { value:'after-story', anchor:'#home-book-shelves', position:'before' },
+  { value:'after-shelves', anchor:'#new', position:'before' },
+  { value:'after-new', anchor:'#publisher-featured', position:'before' },
+  { value:'after-publishers-features', anchor:'#departments', position:'before' },
+  { value:'after-departments', anchor:'#publishers', position:'before' },
+  { value:'after-publishers', anchor:'.newsletter', position:'before' },
+  { value:'end', anchor:'.newsletter', position:'after' }
+];
+function homeSectionEntries(section) {
+  if (!section || section.active === false || !section.id) return null;
+  if (section.type === 'collection') {
+    const collection = collections.find(item => item.id === section.collectionId && item.active);
+    if (!collection) return null;
+    return { section, collection, items: collection.bookIds.map(id => byId[id]).filter(Boolean) };
+  }
+  return { section, collection: null, items: (section.bookIds || []).map(id => byId[id]).filter(Boolean) };
+}
+function renderHomeSections() {
+  $$('[data-home-section]').forEach(node => node.remove());
+  const prepared = (Array.isArray(homeSections) ? homeSections : []).map(homeSectionEntries).filter(entry => entry && entry.items.length);
+  if (!prepared.length) return;
+  const groups = new Map();
+  for (const entry of prepared) {
+    const placement = HOME_SECTION_PLACEMENTS.some(item => item.value === entry.section.placement) ? entry.section.placement : 'after-shelves';
+    if (!groups.has(placement)) groups.set(placement, []);
+    groups.get(placement).push(entry);
+  }
+  for (const [placement, entries] of groups) {
+    const config = HOME_SECTION_PLACEMENTS.find(item => item.value === placement) || HOME_SECTION_PLACEMENTS[3];
+    let anchor = document.querySelector(config.anchor);
+    if (!anchor?.parentNode) anchor = document.querySelector('.newsletter') || homeMain;
+    if (!anchor?.parentNode) continue;
+    const fragment = document.createDocumentFragment();
+    for (const { section, collection } of entries) {
+      const element = document.createElement('section');
+      element.className = 'home-custom-section section-pad wrap';
+      element.dataset.homeSection = section.id;
+      const href = collection ? `#collection/${encodeURIComponent(collection.slug)}` : '#catalog';
+      element.innerHTML = `<div class="section-heading compact"><div><p class="eyebrow">رفّ من اختيار الغزال</p><h2>${escapeHtml(section.title)}</h2>${section.description ? `<p class="home-custom-description">${escapeHtml(section.description)}</p>` : ''}</div><a class="underlined-link" href="${href}">عرض الكل <span aria-hidden="true">↖</span></a></div>`;
+      const carousel = document.createElement('div');
+      carousel.className = 'home-custom-carousel';
+      carousel.id = `home-custom-${section.id}`;
+      element.appendChild(carousel);
+      fragment.appendChild(element);
+    }
+    if (config.position === 'after') anchor.parentNode.insertBefore(fragment, anchor.nextSibling);
+    else anchor.parentNode.insertBefore(fragment, anchor);
+  }
+  prepared.forEach(({ section, items }) => renderCarousel(`home-custom-${section.id}`, `home-section-${section.id}`, items, Number.MAX_SAFE_INTEGER));
+  observeReveals();
+}
 function renderFeaturedPublishers() {
   const target = document.getElementById('publisher-featured'); if (!target) return;
   const active = (publisherFeatures || []).filter(item => item.active !== false).map(item => ({ ...item, books: books.filter(book => book.publisher === item.publisher) }));
@@ -950,4 +1009,5 @@ document.addEventListener('click', event => { const trigger = event.target.close
 showRoute();
 renderFeaturedSelections();
 renderHomeShelves();
+renderHomeSections();
 renderFeaturedPublishers();
