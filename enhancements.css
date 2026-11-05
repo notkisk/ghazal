@@ -360,7 +360,7 @@ img.cover.edition-image{display:block;padding:0;object-fit:cover;object-position
 .shelf-card-add span{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.18);font-size:13px;line-height:1}
 .shelf-card-add:hover{background:var(--ink)}
 .shelf-card-empty{background:#efe8dc;color:var(--muted);cursor:default}
-.shelf-carousel-controls{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:16px}
+.shelf-carousel-controls{direction:rtl;display:flex;align-items:center;justify-content:center;gap:16px;margin-top:16px}
 .shelf-carousel-arrow{width:38px;height:38px;padding:0;border-radius:50%;border:1px solid rgba(28,25,20,.2);background:#fff;color:var(--ink);display:grid;place-items:center;font-size:17px;line-height:1;cursor:pointer;transition:background .2s,color .2s,border-color .2s}
 .shelf-carousel-arrow:hover{background:var(--brown);border-color:var(--brown);color:#fff}
 .shelf-carousel-count{min-width:46px;text-align:center;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;letter-spacing:.06em}

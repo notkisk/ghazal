@@ -65,9 +65,26 @@ let catalogLoaded = false;
 window.addEventListener('storage', event => { if (event.key === 'ghazal.customBooks.v1' || event.key === 'ghazal.customPublishers.v1' || event.key === 'ghazal.genres.v1' || event.key === 'ghazal.discounts.v1' || event.key === 'ghazal.collections.v1') location.reload(); });
 let discounts = readStorage('ghazal.discounts.v1', []);
 let activeDiscountCode = '';
+// Saved ids are reconciled only after the catalog arrives. Remove entries whose
+// books no longer exist and persist the cleaned lists so a refresh stays stable.
+function reconcileSavedItems() {
+  const nextCart = cart.filter(item => byId[item.id]);
+  const nextFavorites = favorites.filter(id => byId[id]);
+  const changed = nextCart.length !== cart.length || nextFavorites.length !== favorites.length;
+  cart = nextCart;
+  favorites = nextFavorites;
+  if (changed) {
+    saveStorage('ghazal.cart.v2', cart);
+    saveStorage('ghazal.favorites.v2', favorites);
+  }
+  return changed;
+}
 function applyCatalogPayload(payload) {
   books = Array.isArray(payload?.books) ? payload.books.map(book => ({ ...book, stock: Number(book.stock ?? book.available ?? 0) })) : [];
   byId = Object.fromEntries(books.map(book => [book.id, book]));
+  reconcileSavedItems();
+  renderCart();
+  if (location.hash === '#favorites') renderFavoritesPage();
   publishers = payload?.publishers || [];
   genres = payload?.genres || {};
   catalogBookGenres = payload?.bookGenres || [];
@@ -161,8 +178,12 @@ function installMetaPixel() {
 }
 installMetaPixel();
 
-let cart = readStorage('ghazal.cart.v2', []).filter(item => byId[item.id] && Number.isInteger(item.qty) && item.qty > 0);
-let favorites = readStorage('ghazal.favorites.v2', []).filter(id => byId[id]);
+// Do not drop saved items against byId here: the catalog is fetched
+// asynchronously, so byId is still empty on first load and every saved item
+// would be discarded. Keep the stored ids until applyCatalogPayload knows which
+// books still exist, then reconcile once.
+let cart = readStorage('ghazal.cart.v2', []).filter(item => item && item.id != null && Number.isInteger(item.qty) && item.qty > 0);
+let favorites = [...new Set(readStorage('ghazal.favorites.v2', []).filter(id => id != null))];
 let activeFilter = 'all';
 let showAllBooks = false;
 let checkoutStep = 1;
@@ -215,7 +236,7 @@ function renderCarousel(targetId, carouselId, list) {
   const target = document.getElementById(targetId); if (!target) return;
   const items = list.filter(Boolean).slice(0, 12);
   if (!items.length) { target.innerHTML = ''; return; }
-  target.innerHTML = `<div class="shelf-carousel" data-carousel="${carouselId}"><div class="shelf-carousel-viewport" tabindex="0" role="group" aria-label="رف كتب قابل للتمرير"><div class="shelf-carousel-track">${items.map(shelfCardTemplate).join('')}</div></div><div class="shelf-carousel-controls"><button class="shelf-carousel-arrow" type="button" data-shelf-prev="${carouselId}" aria-label="الكتب السابقة">→</button><span class="shelf-carousel-count" aria-live="polite">1 / ${items.length}</span><button class="shelf-carousel-arrow" type="button" data-shelf-next="${carouselId}" aria-label="الكتب التالية">←</button></div></div>`;
+  target.innerHTML = `<div class="shelf-carousel" data-carousel="${carouselId}"><div class="shelf-carousel-viewport" tabindex="0" role="group" aria-label="رف كتب قابل للتمرير"><div class="shelf-carousel-track">${items.map(shelfCardTemplate).join('')}</div></div><div class="shelf-carousel-controls" dir="rtl"><button class="shelf-carousel-arrow" type="button" data-shelf-prev="${carouselId}" aria-label="الكتب السابقة">→</button><span class="shelf-carousel-count" aria-live="polite">1 / ${items.length}</span><button class="shelf-carousel-arrow" type="button" data-shelf-next="${carouselId}" aria-label="الكتب التالية">←</button></div></div>`;
   const carousel = target.querySelector('.shelf-carousel');
   const viewport = carousel.querySelector('.shelf-carousel-viewport');
   viewport.addEventListener('scroll', () => syncShelfCount(carousel), { passive: true });
@@ -309,8 +330,8 @@ function toast(message) {
   toast.timer = setTimeout(() => element.classList.remove('visible'), 2800);
 }
 const cartCount = () => cart.reduce((sum, item) => sum + item.qty, 0);
-const subtotal = () => cart.reduce((sum, item) => sum + discountedPrice(byId[item.id]) * item.qty, 0);
-const originalSubtotal = () => cart.reduce((sum, item) => sum + byId[item.id].price * item.qty, 0);
+const subtotal = () => cart.reduce((sum, item) => { const book = byId[item.id]; return book ? sum + discountedPrice(book) * item.qty : sum; }, 0);
+const originalSubtotal = () => cart.reduce((sum, item) => { const book = byId[item.id]; return book ? sum + book.price * item.qty : sum; }, 0);
 const discountTotal = () => originalSubtotal() - subtotal();
 function syncCart() { saveStorage('ghazal.cart.v2', cart); renderCart(); }
 function changeQuantity(id, delta) {
@@ -324,14 +345,14 @@ function changeQuantity(id, delta) {
 $('.cart-footer').innerHTML = `<div class="cart-totals"><span>المجموع الفرعي</span><strong id="cart-subtotal">٠ د.ج</strong></div><p>تُحسب رسوم التوصيل في الخطوة التالية. الدفع نقدًا عند الاستلام.</p><button id="cart-order" class="button button-dark" type="button">متابعة إلى إتمام الطلب <span aria-hidden="true">↖</span></button>`;
 function renderCart() {
   const count = cartCount();
+  const items = cart.map(({ id, qty }) => ({ id, qty, book: byId[id] })).filter(item => item.book);
   $('#cart-count').textContent = count;
   $('#cart-open').setAttribute('aria-label', `سلة الكتب، ${count} كتاب`);
-  $('#cart-items').innerHTML = count ? cart.map(({ id, qty }) => {
-    const book = byId[id];
+  $('#cart-items').innerHTML = items.length ? items.map(({ id, qty, book }) => {
     return `<div class="cart-item"><button class="cart-book-link" data-view="${id}" aria-label="اعرض تفاصيل ${book.title}"><img src="${coverUrl(book)}" alt="" /><span><strong>${book.title}</strong><small>${book.author}</small></span></button><div class="cart-item-copy"><span>${priceHtml(book)}</span><div class="quantity-control"><button data-qty="-1" data-id="${id}" aria-label="أنقص ${book.title}">−</button><output>${qty}</output><button data-qty="1" data-id="${id}" aria-label="زد ${book.title}">+</button></div></div><button class="remove-item" data-remove="${id}" aria-label="احذف ${book.title}">×</button></div>`;
   }).join('') : '<div class="empty-cart"><span>✳</span><p>سلتك تنتظر كتابًا جيدًا.</p><a href="#new" data-close="cart-overlay">تصفّح الكتب <span>↖</span></a></div>';
-  $('#cart-subtotal').textContent = money(subtotal());
-  $('#cart-order').disabled = count === 0;
+  $('#cart-subtotal').textContent = money(items.length ? subtotal() : 0);
+  $('#cart-order').disabled = items.length === 0;
   $$('[data-close]', $('#cart-items')).forEach(link => link.addEventListener('click', () => hideOverlay('cart-overlay')));
 }
 renderCart();

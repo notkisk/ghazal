@@ -31,6 +31,20 @@ test('storefront keeps mobile checkout and responsive shelf behavior', () => {
   assert.match(read('index.html'), /home-book-shelves|newsletter-form/);
 });
 
+test('saved cart and favorites survive refresh and carousel controls follow RTL', () => {
+  const script = read('script.js');
+  const css = read('enhancements.css');
+  // Saved items must not be filtered while byId is still empty on first load.
+  assert.doesNotMatch(script, /let cart = readStorage\('ghazal\.cart\.v2', \[\]\)\.filter\(item => byId\[item\.id\]/);
+  assert.doesNotMatch(script, /let favorites = readStorage\('ghazal\.favorites\.v2', \[\]\)\.filter\(id => byId\[id\]\)/);
+  assert.match(script, /function reconcileSavedItems\(\)/);
+  assert.match(script, /byId = Object\.fromEntries[\s\S]{0,200}reconcileSavedItems\(\)/);
+  // The featured-publisher card forces direction:ltr, so the controls need an
+  // explicit RTL direction or prev/next swap places compared with other shelves.
+  assert.match(script, /shelf-carousel-controls" dir="rtl"/);
+  assert.match(css, /\.shelf-carousel-controls\{direction:rtl/);
+});
+
 test('backup script never mutates the database at require time', () => {
   const backup = read('scripts/backup-db.js');
   assert.doesNotMatch(backup, /require\(['"]\.\.\/server['"]\)/);
