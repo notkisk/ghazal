@@ -45,6 +45,14 @@ test('saved cart and favorites survive refresh and carousel controls follow RTL'
   assert.match(css, /\.shelf-carousel-controls\{direction:rtl/);
 });
 
+test('background catalog refresh does not replay reveal animations', () => {
+  const script = read('script.js');
+  assert.match(script, /const signature = JSON\.stringify\(payload \?\? null\)/);
+  assert.match(script, /if \(signature === lastCatalogSignature\) return;/);
+  assert.match(script, /applyCatalogPayload\(payload, \{ silent: true \}\)/);
+  assert.match(script, /if \(suppressRevealEntrance\) \{ element\.classList\.add\('is-visible'\); return; \}/);
+});
+
 test('backup script never mutates the database at require time', () => {
   const backup = read('scripts/backup-db.js');
   assert.doesNotMatch(backup, /require\(['"]\.\.\/server['"]\)/);

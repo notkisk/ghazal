@@ -65,6 +65,10 @@ let catalogLoaded = false;
 window.addEventListener('storage', event => { if (event.key === 'ghazal.customBooks.v1' || event.key === 'ghazal.customPublishers.v1' || event.key === 'ghazal.genres.v1' || event.key === 'ghazal.discounts.v1' || event.key === 'ghazal.collections.v1') location.reload(); });
 let discounts = readStorage('ghazal.discounts.v1', []);
 let activeDiscountCode = '';
+let lastCatalogSignature = '';
+// Auto-refresh (returning to the tab or the periodic sync) must not replay the
+// entrance animations for cards that are already on screen.
+let suppressRevealEntrance = false;
 // Saved ids are reconciled only after the catalog arrives. Remove entries whose
 // books no longer exist and persist the cleaned lists so a refresh stays stable.
 function reconcileSavedItems() {
@@ -79,29 +83,39 @@ function reconcileSavedItems() {
   }
   return changed;
 }
-function applyCatalogPayload(payload) {
-  books = Array.isArray(payload?.books) ? payload.books.map(book => ({ ...book, stock: Number(book.stock ?? book.available ?? 0) })) : [];
-  byId = Object.fromEntries(books.map(book => [book.id, book]));
-  reconcileSavedItems();
-  renderCart();
-  if (location.hash === '#favorites') renderFavoritesPage();
-  publishers = payload?.publishers || [];
-  genres = payload?.genres || {};
-  catalogBookGenres = payload?.bookGenres || [];
-  discounts = payload?.discounts || [];
-  authorProfiles = payload?.authorProfiles || {};
-  collections = payload?.collections || [];
-  featuredBookIds = payload?.featuredBookIds || [];
-  bestSellerBookIds = payload?.bestSellerBookIds || [];
-  authorSpotlight = payload?.authorSpotlight || null;
-  publisherFeatures = payload?.publisherFeatures || [];
-  catalogLoaded = true;
-  renderCategoryUI(); renderDepartmentLinks(); renderPublisherGrid(); renderHeroArt(); renderBooks();
-  renderFeaturedSelections(); renderHomeShelves(); renderFeaturedPublishers();
-  if (location.hash === '#catalog') renderCatalogPage();
-  // Routes rendered before the asynchronous catalog response have no data.
-  // Re-render all catalog-backed pages once the server payload arrives.
-  if (['#departments', '#publishers'].includes(location.hash) || /^#(genre|collection|publisher|book|author)\//.test(location.hash)) showRoute();
+function applyCatalogPayload(payload, options = {}) {
+  const signature = JSON.stringify(payload ?? null);
+  // Background refreshes return the same catalog most of the time. Skipping the
+  // identical payload keeps the page (and its entry animations) untouched.
+  if (signature === lastCatalogSignature) return;
+  suppressRevealEntrance = options.silent === true;
+  try {
+    books = Array.isArray(payload?.books) ? payload.books.map(book => ({ ...book, stock: Number(book.stock ?? book.available ?? 0) })) : [];
+    byId = Object.fromEntries(books.map(book => [book.id, book]));
+    reconcileSavedItems();
+    renderCart();
+    if (location.hash === '#favorites') renderFavoritesPage();
+    publishers = payload?.publishers || [];
+    genres = payload?.genres || {};
+    catalogBookGenres = payload?.bookGenres || [];
+    discounts = payload?.discounts || [];
+    authorProfiles = payload?.authorProfiles || {};
+    collections = payload?.collections || [];
+    featuredBookIds = payload?.featuredBookIds || [];
+    bestSellerBookIds = payload?.bestSellerBookIds || [];
+    authorSpotlight = payload?.authorSpotlight || null;
+    publisherFeatures = payload?.publisherFeatures || [];
+    catalogLoaded = true;
+    renderCategoryUI(); renderDepartmentLinks(); renderPublisherGrid(); renderHeroArt(); renderBooks();
+    renderFeaturedSelections(); renderHomeShelves(); renderFeaturedPublishers();
+    if (location.hash === '#catalog') renderCatalogPage();
+    // Routes rendered before the asynchronous catalog response have no data.
+    // Re-render all catalog-backed pages once the server payload arrives.
+    if (['#departments', '#publishers'].includes(location.hash) || /^#(genre|collection|publisher|book|author)\//.test(location.hash)) showRoute();
+    lastCatalogSignature = signature;
+  } finally {
+    suppressRevealEntrance = false;
+  }
 }
 function renderHeroArt() {
   const art = document.getElementById('hero-art'); if (!art) return;
@@ -138,7 +152,7 @@ function renderPublisherGrid() {
 }
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) window.GhazalAPI.catalog().then(applyCatalogPayload).catch(() => {});
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) {
-  const refreshLiveCatalog = () => window.GhazalAPI.catalog().then(applyCatalogPayload).catch(() => {});
+  const refreshLiveCatalog = () => window.GhazalAPI.catalog().then(payload => applyCatalogPayload(payload, { silent: true })).catch(() => {});
   setInterval(refreshLiveCatalog, 5 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshLiveCatalog(); });
 }
@@ -625,7 +639,11 @@ function observeReveals() {
     if (entry.isIntersecting) { entry.target.classList.add('is-visible'); revealObserver.unobserve(entry.target); }
   }), { threshold: .09, rootMargin: '0px 0px -24px 0px' });
   $$('.section-heading,.feature-story,.selection-item,.book-card,.department-intro,.department-links a,.publisher,.journal-copy,.newsletter').forEach(element => {
-    if (!element.classList.contains('reveal')) { element.classList.add('reveal'); revealObserver.observe(element); }
+    if (!element.classList.contains('reveal')) {
+      element.classList.add('reveal');
+      if (suppressRevealEntrance) { element.classList.add('is-visible'); return; }
+      revealObserver.observe(element);
+    }
   });
 }
 observeReveals();
