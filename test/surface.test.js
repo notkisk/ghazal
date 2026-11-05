@@ -57,7 +57,7 @@ test('value shelf reshuffles its books and keeps a stable page-load order', () =
   assert.match(script, /function shuffleBooks\(/);
   assert.match(script, /function valueShelfBooks\(/);
   assert.match(script, /let valueShelfIds = \[\]/);
-  assert.match(script, /valueShelfBooks\(books\.filter\(book => Number\(book\.price\) <= 2000\)\)/);
+  assert.match(script, /valueShelfBooks\(books\.filter\(book => Number\(book\.price\) <= 1500\)\)/);
 });
 
 test('background catalog refresh does not replay reveal animations', () => {
@@ -126,7 +126,7 @@ test('homepage best sellers use confirmed orders and a stable carousel fallback'
 test('cache-busting versions match the latest edited assets', () => {
   const index = read('index.html');
   const adminHtml = read('admin.html');
-  assert.match(index, /script\.js\?v=20261105-5/);
+  assert.match(index, /script\.js\?v=20261105-6/);
   assert.match(index, /api\.js\?v=20261105-3/);
   assert.match(adminHtml, /admin\.js\?v=20261105-9/);
   assert.match(adminHtml, /api\.js\?v=20261105-3/);

@@ -966,7 +966,7 @@ function renderHomeShelves() {
   const anchor = document.getElementById('new') || document.getElementById('publisher-featured');
   if (!$('#home-book-shelves')) {
     if (!anchor?.parentNode) return;
-    anchor.insertAdjacentHTML('beforebegin', `<section class="home-book-shelves section-pad wrap" id="home-book-shelves"><div class="home-shelf-block home-bestseller-shelf"><div class="home-shelf-heading"><div><h3>الأكثر قراءة الآن</h3><p>عناوين تعود إليها الأيدي مرة بعد مرة.</p></div><a class="underlined-link" href="#bestsellers">كل الأكثر قراءة ↖</a></div><div id="home-bestseller-grid"></div></div><div id="home-author-spotlight"></div><div id="home-collection-shelves"></div><div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>قراءة جميلة بسعر هادئ</h3><p>أفضل ما تجده بـ ٢٠٠٠ د.ج أو أقل.</p></div><a class="underlined-link" href="#catalog">تصفح حسب السعر ↖</a></div><div id="home-value-grid"></div></div></section>`);
+    anchor.insertAdjacentHTML('beforebegin', `<section class="home-book-shelves section-pad wrap" id="home-book-shelves"><div class="home-shelf-block home-bestseller-shelf"><div class="home-shelf-heading"><div><h3>الأكثر قراءة الآن</h3><p>عناوين تعود إليها الأيدي مرة بعد مرة.</p></div><a class="underlined-link" href="#bestsellers">كل الأكثر قراءة ↖</a></div><div id="home-bestseller-grid"></div></div><div id="home-author-spotlight"></div><div id="home-collection-shelves"></div><div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>قراءة جميلة بسعر هادئ</h3><p>أفضل ما تجده بـ ١٥٠٠ د.ج أو أقل.</p></div><a class="underlined-link" href="#catalog">تصفح حسب السعر ↖</a></div><div id="home-value-grid"></div></div></section>`);
   }
   const featuredIds = new Set((featuredBookIds || []).map(String));
   const bestSellerIds = new Set((bestSellerBookIds || []).map(String));
@@ -985,7 +985,7 @@ function renderHomeShelves() {
   renderCarousel('home-bestseller-grid', 'bestseller', bestsellers);
   document.querySelector('.home-bestseller-shelf')?.toggleAttribute('hidden', !bestsellers.length);
   $('#home-collection-shelves').hidden = !shelves.length;
-  const valueBooks = valueShelfBooks(books.filter(book => Number(book.price) <= 2000));
+  const valueBooks = valueShelfBooks(books.filter(book => Number(book.price) <= 1500));
   renderCarousel('home-value-grid', 'value', valueBooks);
   const valueShelfBlock = document.getElementById('home-value-grid')?.closest('.home-shelf-block');
   if (valueShelfBlock) valueShelfBlock.hidden = valueBooks.length === 0;
