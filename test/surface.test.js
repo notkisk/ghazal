@@ -43,6 +43,21 @@ test('saved cart and favorites survive refresh and carousel controls follow RTL'
   // explicit RTL direction or prev/next swap places compared with other shelves.
   assert.match(script, /shelf-carousel-controls" dir="rtl"/);
   assert.match(css, /\.shelf-carousel-controls\{direction:rtl/);
+  // Controls must be visible before the first scroll; only the arrows dim when
+  // the shelf fits without overflow.
+  assert.doesNotMatch(css, /\.shelf-carousel:not\(\.is-scrollable\) \.shelf-carousel-controls\{display:none\}/);
+  assert.match(css, /\.shelf-carousel:not\(\.is-scrollable\) \.shelf-carousel-arrow\{opacity/);
+  assert.match(script, /function watchShelfCarousel\(/);
+  assert.match(script, /new ResizeObserver\(/);
+  assert.match(script, /requestAnimationFrame\(refresh\)/);
+});
+
+test('value shelf reshuffles its books and keeps a stable page-load order', () => {
+  const script = read('script.js');
+  assert.match(script, /function shuffleBooks\(/);
+  assert.match(script, /function valueShelfBooks\(/);
+  assert.match(script, /let valueShelfIds = \[\]/);
+  assert.match(script, /valueShelfBooks\(books\.filter\(book => Number\(book\.price\) <= 2000\)\)/);
 });
 
 test('background catalog refresh does not replay reveal animations', () => {
@@ -111,7 +126,7 @@ test('homepage best sellers use confirmed orders and a stable carousel fallback'
 test('cache-busting versions match the latest edited assets', () => {
   const index = read('index.html');
   const adminHtml = read('admin.html');
-  assert.match(index, /script\.js\?v=20261105-4/);
+  assert.match(index, /script\.js\?v=20261105-5/);
   assert.match(index, /api\.js\?v=20261105-3/);
   assert.match(adminHtml, /admin\.js\?v=20261105-9/);
   assert.match(adminHtml, /api\.js\?v=20261105-3/);

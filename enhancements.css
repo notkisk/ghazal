@@ -374,7 +374,8 @@ img.cover.edition-image{display:block;padding:0;object-fit:cover;object-position
 .shelf-card-media{aspect-ratio:2/3}
 .shelf-carousel-count{direction:ltr;unicode-bidi:isolate}
 @media(max-width:700px){.shelf-card{flex-basis:44%}}
-.shelf-carousel:not(.is-scrollable) .shelf-carousel-controls{display:none}
+.shelf-carousel:not(.is-scrollable) .shelf-carousel-arrow{opacity:.3;pointer-events:none}
+.shelf-carousel-arrow:disabled{opacity:.3;cursor:default}
 .shelf-carousel-viewport.is-dragging{cursor:grabbing;scroll-snap-type:none;user-select:none}
 .shelf-carousel-viewport.is-dragging *{user-select:none}
 .shelf-carousel-viewport img{-webkit-user-drag:none;user-select:none}

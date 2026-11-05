@@ -239,14 +239,30 @@ function bestsellerFallbackBooks() {
   if (key !== bestsellerFallbackKey) {
     bestsellerFallbackKey = key;
     const inStock = books.filter(book => Number(book.stock) > 0);
-    const pool = [...(inStock.length ? inStock : books)];
-    for (let index = pool.length - 1; index > 0; index -= 1) {
-      const swap = Math.floor(Math.random() * (index + 1));
-      [pool[index], pool[swap]] = [pool[swap], pool[index]];
-    }
-    bestsellerFallbackIds = pool.slice(0, 8).map(book => book.id);
+    bestsellerFallbackIds = shuffleBooks(inStock.length ? inStock : books).slice(0, 8).map(book => book.id);
   }
   return bestsellerFallbackIds.map(id => byId[id]).filter(Boolean);
+}
+function shuffleBooks(list) {
+  const pool = [...list];
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(Math.random() * (index + 1));
+    [pool[index], pool[swap]] = [pool[swap], pool[index]];
+  }
+  return pool;
+}
+// The "قراءة جميلة بسعر هادئ" shelf reshuffles on every visit so the same
+// inexpensive titles do not sit there forever. The page-load cache keeps the
+// order stable while the catalog refreshes in the background.
+let valueShelfIds = [];
+let valueShelfKey = '';
+function valueShelfBooks(candidates) {
+  const key = candidates.map(book => String(book.id)).join('|');
+  if (key !== valueShelfKey) {
+    valueShelfKey = key;
+    valueShelfIds = shuffleBooks(candidates).map(book => book.id);
+  }
+  return valueShelfIds.map(id => byId[id]).filter(Boolean);
 }
 function shelfStep(viewport) {
   const card = viewport.querySelector('.shelf-card');
@@ -266,9 +282,29 @@ function syncShelfCount(carousel) {
   const index = Math.min(total, Math.round(progress * (total - 1)) + 1);
   count.textContent = `${index} / ${total}`;
   carousel.classList.toggle('is-scrollable', maxScroll > 4);
+  carousel.querySelectorAll('.shelf-carousel-arrow').forEach(arrow => { arrow.disabled = maxScroll <= 4; });
+}
+// Carousel controls used to stay invisible until the first scroll because the
+// shelf was measured before cards had finished laying out. Observe the track and
+// re-check after paint, fonts, images, and container resizes.
+const shelfSizeWatcher = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
+  for (const entry of entries) {
+    const carousel = entry.target.closest('.shelf-carousel');
+    if (carousel) syncShelfCount(carousel);
+  }
+}) : null;
+function watchShelfCarousel(carousel) {
+  const viewport = carousel.querySelector('.shelf-carousel-viewport');
+  const track = carousel.querySelector('.shelf-carousel-track');
+  const refresh = () => syncShelfCount(carousel);
+  requestAnimationFrame(refresh);
+  setTimeout(refresh, 120);
+  if (shelfSizeWatcher && viewport) { shelfSizeWatcher.observe(viewport); if (track) shelfSizeWatcher.observe(track); }
+  viewport?.querySelectorAll('img').forEach(image => { if (!image.complete) image.addEventListener('load', refresh, { once: true }); });
 }
 function renderCarousel(targetId, carouselId, list, limit = 12) {
   const target = document.getElementById(targetId); if (!target) return;
+  target.querySelectorAll('.shelf-carousel-viewport,.shelf-carousel-track').forEach(element => shelfSizeWatcher?.unobserve(element));
   const items = list.filter(Boolean).slice(0, limit);
   if (!items.length) { target.innerHTML = ''; return; }
   target.innerHTML = `<div class="shelf-carousel" data-carousel="${carouselId}"><div class="shelf-carousel-viewport" tabindex="0" role="group" aria-label="رف كتب قابل للتمرير"><div class="shelf-carousel-track">${items.map(shelfCardTemplate).join('')}</div></div><div class="shelf-carousel-controls" dir="rtl"><button class="shelf-carousel-arrow" type="button" data-shelf-prev="${carouselId}" aria-label="الكتب السابقة">→</button><span class="shelf-carousel-count" aria-live="polite">1 / ${items.length}</span><button class="shelf-carousel-arrow" type="button" data-shelf-next="${carouselId}" aria-label="الكتب التالية">←</button></div></div>`;
@@ -276,8 +312,11 @@ function renderCarousel(targetId, carouselId, list, limit = 12) {
   const viewport = carousel.querySelector('.shelf-carousel-viewport');
   viewport.addEventListener('scroll', () => syncShelfCount(carousel), { passive: true });
   syncShelfCount(carousel);
+  watchShelfCarousel(carousel);
 }
 window.addEventListener('resize', () => $$('.shelf-carousel').forEach(syncShelfCount));
+window.addEventListener('load', () => $$('.shelf-carousel').forEach(syncShelfCount));
+if (document.fonts?.ready) document.fonts.ready.then(() => $$('.shelf-carousel').forEach(syncShelfCount));
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-shelf-prev], [data-shelf-next]'); if (!button) return;
   const carousel = button.closest('.shelf-carousel');
@@ -946,12 +985,7 @@ function renderHomeShelves() {
   renderCarousel('home-bestseller-grid', 'bestseller', bestsellers);
   document.querySelector('.home-bestseller-shelf')?.toggleAttribute('hidden', !bestsellers.length);
   $('#home-collection-shelves').hidden = !shelves.length;
-  const bestsellerRank = new Map(bestSellerBookIds.map((id, index) => [String(id), index]));
-  const valueBooks = books.filter(book => Number(book.price) <= 2000).sort((a, b) => {
-    const aRank = bestsellerRank.get(String(a.id)) ?? Number.MAX_SAFE_INTEGER;
-    const bRank = bestsellerRank.get(String(b.id)) ?? Number.MAX_SAFE_INTEGER;
-    return aRank - bRank || Number(a.price) - Number(b.price) || a.title.localeCompare(b.title, 'ar');
-  });
+  const valueBooks = valueShelfBooks(books.filter(book => Number(book.price) <= 2000));
   renderCarousel('home-value-grid', 'value', valueBooks);
   const valueShelfBlock = document.getElementById('home-value-grid')?.closest('.home-shelf-block');
   if (valueShelfBlock) valueShelfBlock.hidden = valueBooks.length === 0;
