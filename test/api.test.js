@@ -472,6 +472,41 @@ test('collection edits, book changes, and visibility toggles persist', async () 
   }
 });
 
+test('admin staff with edit_catalog can manage collections', async () => {
+  const base = await listen();
+  const sha256 = value => require('node:crypto').createHash('sha256').update(String(value)).digest('hex');
+  const createStaffSession = permissions => {
+    const stamp = new Date().toISOString();
+    const inserted = db.prepare('INSERT INTO users (email,password_hash,role,permissions_json,created_at) VALUES (?,?,?,?,?)').run(`catalog-admin-${Date.now()}-${Math.random()}@example.com`, passwordHash('catalog-secret-12'), 'admin', JSON.stringify(permissions), stamp);
+    const token = `test-token-${inserted.lastInsertRowid}-${Math.random().toString(16).slice(2)}`;
+    db.prepare('INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (?,?,?)').run(sha256(token), inserted.lastInsertRowid, new Date(Date.now() + 3600e3).toISOString());
+    return { id: inserted.lastInsertRowid, token };
+  };
+  const staff = createStaffSession({ ...permissionsFor({ role:'owner' }) });
+  const limited = createStaffSession({ view_catalog:true });
+  let id;
+  try {
+    const headers = { 'content-type':'application/json', authorization:`Bearer ${staff.token}` };
+    const created = await fetch(`${base}/api/admin/collections`, { method:'POST', headers, body:JSON.stringify({ slug:`staff-test-${Date.now()}`, title:'مجموعة يديرها موظف', description:'', bookIds:['stranger'], homepage:false, active:true }) });
+    assert.equal(created.status, 201);
+    id = (await created.json()).collection.id;
+    const hidden = await fetch(`${base}/api/admin/collections/${encodeURIComponent(id)}`, { method:'PATCH', headers, body:JSON.stringify({ active:false }) });
+    assert.equal(hidden.status, 200);
+    assert.equal((await hidden.json()).collection.active, false);
+    const removed = await fetch(`${base}/api/admin/collections/${encodeURIComponent(id)}`, { method:'DELETE', headers });
+    assert.equal(removed.status, 200);
+    assert.equal(db.prepare('SELECT 1 FROM collections WHERE id=?').get(id), undefined);
+    id = null;
+    const denied = await fetch(`${base}/api/admin/collections`, { method:'POST', headers:{ 'content-type':'application/json', authorization:`Bearer ${limited.token}` }, body:JSON.stringify({ slug:`staff-denied-${Date.now()}`, title:'مرفوضة', description:'', bookIds:[], homepage:false, active:true }) });
+    assert.equal(denied.status, 403);
+  } finally {
+    if (id) db.prepare('DELETE FROM collections WHERE id=?').run(id);
+    db.prepare('UPDATE audit_log SET user_id=NULL WHERE user_id IN (?,?)').run(staff.id, limited.id);
+    db.prepare('DELETE FROM users WHERE id IN (?,?)').run(staff.id, limited.id);
+    await closeServer();
+  }
+});
+
 test('best sellers only include confirmed orders', () => {
   const bookId = 'brief-time';
   assert.ok(!catalogPayload().bestSellerBookIds.includes(bookId));

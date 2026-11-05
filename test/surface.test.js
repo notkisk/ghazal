@@ -88,6 +88,9 @@ test('dashboard manages custom homepage sections without a carousel item cap', (
   assert.match(admin, /data-delete-collection=/);
   assert.match(admin, /window\.GhazalAPI\.deleteCollection/);
   assert.match(admin, /function collectionErrorMessage\(/);
+  // Staff with catalog-edit permission can manage collections too.
+  assert.match(server, /url\.pathname\.startsWith\('\/api\/admin\/collections\/'\)\) \{ if \(!can\(user, 'edit_catalog'\)\)/);
+  assert.match(admin, /document\.body\.dataset\.role === 'owner' \|\| currentPermissions\.edit_catalog/);
   // Server: defaults, validation, and placement list.
   assert.match(server, /const HOME_SECTION_PLACEMENTS = \[/);
   assert.match(server, /function sanitizeHomeSections\(/);
@@ -110,7 +113,7 @@ test('cache-busting versions match the latest edited assets', () => {
   const adminHtml = read('admin.html');
   assert.match(index, /script\.js\?v=20261105-4/);
   assert.match(index, /api\.js\?v=20261105-3/);
-  assert.match(adminHtml, /admin\.js\?v=20261105-8/);
+  assert.match(adminHtml, /admin\.js\?v=20261105-9/);
   assert.match(adminHtml, /api\.js\?v=20261105-3/);
   assert.match(adminHtml, /dashboard\.css\?v=20261105-11/);
 });
