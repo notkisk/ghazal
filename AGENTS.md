@@ -12,6 +12,7 @@ Arabic-first bookstore (الغزال للكتب): static storefront + dependency
 - `npm run backup` — SQLite + cover backup folder in `.data/backups` (`GHAZAL_BACKUP_DIR` overrides).
 - `node scripts/create-book-import-template.js` — regenerate the XLSX import template.
 - `python3 scripts/append_ecotrack_orders.py orders.json --output orders.xlsx` — append orders to the Ecotrack workbook.
+- `scripts/backfill-cover-derivatives.js` — not a Node command: paste it into the DevTools console on a logged-in `/admin.html` tab to generate `thumb`/`display` files for books imported without them.
 
 No install step: there are zero npm dependencies, and no lint/format/typecheck/build config. Do not add a bundler/framework for small changes.
 

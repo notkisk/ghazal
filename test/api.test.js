@@ -37,9 +37,14 @@ const PNG_BYTES = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAD
 const PNG_DATA_URL = `data:image/png;base64,${PNG_BYTES.toString('base64')}`;
 async function listen() { await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); return `http://127.0.0.1:${server.address().port}`; }
 async function closeServer() { await new Promise(resolve => server.close(resolve)); }
+let ownerTokenCache = null;
 async function ownerToken(base) {
+  // Logins are rate limited to 10 per IP per 15 minutes, so reuse one session
+  // across the suite instead of burning a slot per test.
+  if (ownerTokenCache) return ownerTokenCache;
   const response = await fetch(`${base}/api/auth/login`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ email:'owner@alghazal.local', password:'secret' }) });
-  return (await response.json()).token;
+  ownerTokenCache = (await response.json()).token;
+  return ownerTokenCache;
 }
 
 test.after(() => fs.rmSync(dataDir, { recursive:true, force:true }));
@@ -192,6 +197,49 @@ test('catalog sync stores the optional page count without requiring it', async (
   }
 });
 
+test('catalog payload is cached, revalidated with an ETag, and invalidated by data changes', async () => {
+  const base = await listen();
+  const id = 'catalog-cache-test';
+  const stamp = new Date().toISOString();
+  try {
+    const first = await fetch(`${base}/api/catalog`, { headers:{ 'accept-encoding':'identity' } });
+    assert.equal(first.status, 200);
+    const etag = first.headers.get('etag');
+    assert.match(etag, /^W\/"[\w-]+"$/);
+    assert.match(first.headers.get('cache-control'), /max-age=30/);
+    assert.match(first.headers.get('cache-control'), /stale-while-revalidate=300/);
+    assert.equal(first.headers.get('content-encoding'), null);
+    assert.ok(!(await first.json()).books.some(book => book.id === id));
+
+    // An unchanged payload costs no bytes on repeat loads.
+    const revalidated = await fetch(`${base}/api/catalog`, { headers:{ 'if-none-match':etag, 'accept-encoding':'identity' } });
+    assert.equal(revalidated.status, 304);
+    assert.equal(await revalidated.text(), '');
+
+    // Gzip clients get the pre-compressed copy and can still parse it.
+    const buffered = await new Promise((resolve, reject) => {
+      const request = http.get(`${base}/api/catalog`, { headers:{ 'accept-encoding':'gzip' } }, res => {
+        const chunks = []; res.on('data', chunk => chunks.push(chunk)); res.on('end', () => resolve({ status:res.statusCode, encoding:res.headers['content-encoding'], body:Buffer.concat(chunks) }));
+      });
+      request.on('error', reject);
+    });
+    assert.equal(buffered.status, 200);
+    assert.equal(buffered.encoding, 'gzip');
+    assert.ok(JSON.parse(zlib.gunzipSync(buffered.body)).books.length > 0);
+
+    // A direct database edit (as imports and order reservations do) invalidates it.
+    db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,reserved,isbn,pages,image,thumb,display,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, 'كتاب التخزين المؤقت', 'كاتب', 'ناشر', 'literature', 'رواية', 1200, 3, 0, '', null, '', null, null, 'اختبار.', stamp, stamp);
+    const fresh = await fetch(`${base}/api/catalog`, { headers:{ 'if-none-match':etag, 'accept-encoding':'identity' } });
+    assert.equal(fresh.status, 200);
+    assert.notEqual(fresh.headers.get('etag'), etag);
+    assert.ok((await fresh.json()).books.some(book => book.id === id));
+  } finally {
+    db.prepare('DELETE FROM books WHERE id=?').run(id);
+    await closeServer();
+  }
+});
+
 test('request bodies split inside a multi-byte character keep the Arabic text intact', async () => {
   const base = await listen();
   const id = 'utf8-split-test';
@@ -251,6 +299,38 @@ test('cover upload stores a deduplicated file and serves it immutably', async ()
     const unsafe = await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ source: '/covers/../../server.js', thumb: PNG_DATA_URL }) });
     assert.equal(unsafe.status, 400);
   } finally { await closeServer(); }
+});
+
+test('cover backfill attaches derivatives to existing books and refreshes the cached catalog', async () => {
+  const base = await listen();
+  const id = 'backfill-cover-test';
+  const stamp = new Date().toISOString();
+  try {
+    const authorization = `Bearer ${await ownerToken(base)}`;
+    const original = await (await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ dataUrl: PNG_DATA_URL }) })).json();
+    const variants = await (await fetch(`${base}/api/admin/covers`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ source: original.image, thumb: PNG_DATA_URL, display: PNG_DATA_URL }) })).json();
+    db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,reserved,isbn,pages,image,thumb,display,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, 'كتاب النسخ المصغّرة', 'كاتب', 'ناشر', 'literature', 'رواية', 1500, 2, 0, '', null, original.image, null, null, '', stamp, stamp);
+
+    // Prime the catalog cache before the backfill, so the update has to invalidate it.
+    await fetch(`${base}/api/catalog`).then(response => response.json());
+
+    const backfill = await fetch(`${base}/api/admin/covers/backfill`, { method:'POST', headers:{'content-type':'application/json', authorization}, body:JSON.stringify({ items:[{ id, thumb: variants.thumb, display: variants.display }, { id:'missing-book', thumb: variants.thumb, display: variants.display }, { id, thumb:'/covers/../../server.js', display: variants.display }] }) });
+    assert.equal(backfill.status, 200);
+    const result = await backfill.json();
+    assert.equal(result.updated, 1);
+    assert.deepEqual(result.skipped, ['missing-book', id]);
+
+    const row = db.prepare('SELECT thumb,display FROM books WHERE id=?').get(id);
+    assert.equal(row.thumb, variants.thumb);
+    assert.equal(row.display, variants.display);
+
+    const catalog = await (await fetch(`${base}/api/catalog`)).json();
+    assert.equal(catalog.books.find(book => book.id === id).thumb, variants.thumb);
+  } finally {
+    db.prepare('DELETE FROM books WHERE id=?').run(id);
+    await closeServer();
+  }
 });
 
 test('cover endpoint downloads remote images on the server', async () => {

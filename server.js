@@ -426,6 +426,36 @@ function catalogPayload() {
   const authorSpotlight = Object.entries(profiles).map(([name, profile]) => ({ name, ...profile, bookIds: db.prepare('SELECT id FROM books WHERE author=? ORDER BY title').all(name).map(row => row.id) })).filter(author => author.bio && author.bookIds.length >= 2).sort((a,b) => Number(b.featured) - Number(a.featured) || b.bookIds.length - a.bookIds.length)[0] || null;
   return { books, publishers: db.prepare('SELECT * FROM publishers ORDER BY name').all(), genres, bookGenres, discounts: contentValue('discounts', []), featuredBookIds: fallbackFeatured, publisherFeatures: contentValue('publisherFeatures', []), homeSections: contentValue('homeSections', []), bestSellerBookIds, bestSellerSales: bestSellerRows, bestSellerWindow: weeklySales.length ? 'weekly' : allTimeSales.length ? 'all-time' : 'none', authorProfiles: profiles, authorSpotlight, collections: collectionList(false) };
 }
+// The public catalog is identical for every visitor, so build it at most once
+// per content change and serve a pre-compressed copy. The cache is keyed by a
+// signature derived from the data instead of the write routes, so imports,
+// direct database edits, and order reservations all invalidate it too.
+const CATALOG_CACHE_TTL = 30 * 1000;
+const catalogSignatureStmt = db.prepare(`
+  SELECT (SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at),'') FROM books)
+      || '/' || (SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at),'') FROM store_content)
+      || '/' || (SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at),'') FROM collections)
+      || '/' || (SELECT COUNT(*) || ':' || COALESCE(SUM(position),0) FROM collection_books)
+      || '/' || (SELECT COUNT(*) || ':' || COALESCE(SUM(COALESCE(LENGTH(name),0)+COALESCE(LENGTH(city),0)+COALESCE(LENGTH(description),0)+COALESCE(LENGTH(logo),0)),0) FROM publishers) AS signature
+`);
+let catalogCache = null;
+function catalogResponse() {
+  const signature = catalogSignatureStmt.get().signature;
+  if (catalogCache && catalogCache.signature === signature && Date.now() - catalogCache.builtAt < CATALOG_CACHE_TTL) return catalogCache;
+  const raw = Buffer.from(json(catalogPayload()));
+  const etag = `W/"${crypto.createHash('sha1').update(raw).digest('base64url')}"`;
+  catalogCache = { signature, builtAt: Date.now(), etag, raw, gzip: raw.length > 1024 ? zlib.gzipSync(raw) : null };
+  return catalogCache;
+}
+function sendCatalog(req, res) {
+  const entry = catalogResponse();
+  const headers = { 'content-type':'application/json; charset=utf-8', etag:entry.etag, 'cache-control':'public, max-age=30, stale-while-revalidate=300', vary:'accept-encoding' };
+  const ifNoneMatch = String(req.headers['if-none-match'] || '').split(',').map(value => value.trim());
+  if (ifNoneMatch.includes(entry.etag)) { res.writeHead(304, headers); return res.end(); }
+  const gzip = Boolean(res._ghazalGzip) && Boolean(entry.gzip);
+  res.writeHead(200, { ...headers, ...(gzip ? { 'content-encoding':'gzip' } : {}) });
+  return res.end(gzip ? entry.gzip : entry.raw);
+}
 async function sendMetaPurchase(body, reference, total, items, request) {
   const pixel = process.env.META_PIXEL_ID; const token = process.env.META_ACCESS_TOKEN; const eventId = String(body.metaEventId || reference); const previous = db.prepare('SELECT status FROM conversion_events WHERE event_id=?').get(eventId); if (previous?.status === 'sent' || metaEventsInFlight.has(eventId)) return; if (!pixel || !token) { recordConversion(eventId,'Purchase',reference,'meta','skipped',{reason:'not_configured'}); return; }
   metaEventsInFlight.add(eventId);
@@ -537,7 +567,7 @@ async function api(req, res, url) {
     if (req.method === 'POST' && url.pathname === '/api/auth/login') { const body = await readBody(req); const email = String(body.email || '').trim().toLowerCase(); const user = db.prepare('SELECT * FROM users WHERE email=?').get(email); if (!user || !passwordMatches(body.password, user.password_hash)) return send(res, 401, { error: 'invalid_credentials' }); return send(res, 200, authResponse(user, createSession(user.id))); }
     if (req.method === 'GET' && url.pathname === '/api/books') return send(res, 200, { books: bookList(url) });
     if (req.method === 'GET' && url.pathname === '/api/collections') return send(res, 200, { collections: collectionList(false) });
-    if (req.method === 'GET' && url.pathname === '/api/catalog') return send(res, 200, catalogPayload());
+    if (req.method === 'GET' && url.pathname === '/api/catalog') return sendCatalog(req, res);
     if (req.method === 'POST' && url.pathname === '/api/orders') { const body = await readBody(req); const reference = createOrder(body); const order = db.prepare('SELECT subtotal,discount,delivery,total FROM orders WHERE reference=?').get(reference); sendMetaPurchase(body, reference, order.total, body.items || [], req).catch(error => console.error(error.message)); sendTelegramOrderNotification(reference).catch(error => console.error(error.message)); return send(res, 201, { reference, status: 'new', ...order }); }
     if (req.method === 'POST' && url.pathname === '/api/newsletter') {
       const body = await readBody(req); const email = String(body.email || '').trim().toLowerCase();
@@ -562,17 +592,40 @@ async function api(req, res, url) {
       const editor = requirePermission(req,res,'edit_catalog'); if (!editor) return;
       const body = await readBody(req);
       const stored = {};
+      // A derivative may be uploaded as a data URL or reference a file that is
+      // already stored (used by the cover backfill for small originals).
+      const existingCoverPath = value => { const candidate = String(value || ''); return /^\/covers\/[a-f0-9]{64}\.[a-z]+$/.test(candidate) && fs.existsSync(path.join(COVERS_DIR, path.basename(candidate))) ? candidate : ''; };
       const existingCover = String(body.source || '');
       if (body.original || body.thumb || body.display) {
         if (body.original) stored.image = storeCover(decodeCoverData(body.original));
-        else if (/^\/covers\/[a-f0-9]{64}\.[a-z]+$/.test(existingCover) && fs.existsSync(path.join(COVERS_DIR, path.basename(existingCover)))) stored.image = existingCover;
-        if (body.thumb) stored.thumb = storeCover(decodeCoverData(body.thumb));
-        if (body.display) stored.display = storeCover(decodeCoverData(body.display));
+        else if (existingCoverPath(existingCover)) stored.image = existingCoverPath(existingCover);
+        if (body.thumb) stored.thumb = existingCoverPath(body.thumb) || storeCover(decodeCoverData(body.thumb));
+        if (body.display) stored.display = existingCoverPath(body.display) || storeCover(decodeCoverData(body.display));
         if (!stored.image) return send(res,400,{error:'invalid_cover'});
       } else if (body.dataUrl) stored.image = storeCover(decodeCoverData(body.dataUrl));
       else if (body.url) stored.image = await fetchCoverFile(body.url);
       else return send(res,400,{error:'invalid_cover'});
       return send(res,201, stored);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/admin/covers/backfill') {
+      // Attach pre-generated derivatives to books that predate them without
+      // rewriting the whole catalog (which would re-send stock and prices).
+      const editor = requirePermission(req,res,'edit_catalog'); if (!editor) return;
+      const body = await readBody(req); const items = Array.isArray(body.items) ? body.items : [];
+      const derivativePath = value => /^\/covers\/[a-f0-9]{64}\.[a-z]+$/.test(String(value || ''));
+      const update = db.prepare('UPDATE books SET thumb=?,display=?,updated_at=? WHERE id=?');
+      const stamp = now(); let updated = 0; const skipped = [];
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const item of items) {
+          const id = String(item?.id || ''); const thumb = String(item?.thumb || ''); const display = String(item?.display || '');
+          if (!id || !derivativePath(thumb) || !derivativePath(display)) { skipped.push(id); continue; }
+          if (update.run(thumb, display, stamp, id).changes) updated += 1; else skipped.push(id);
+        }
+        audit(editor,'backfill','cover',null,{updated,skipped:skipped.length});
+        db.exec('COMMIT');
+      } catch (error) { db.exec('ROLLBACK'); throw error; }
+      return send(res, 200, { ok:true, updated, skipped });
     }
     if (req.method === 'POST' && url.pathname === '/api/admin/covers/cache-remote') {
       const editor = requirePermission(req,res,'edit_catalog'); if (!editor) return;
