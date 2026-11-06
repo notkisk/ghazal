@@ -525,7 +525,11 @@ document.addEventListener('click', event => {
     $$('[data-favorite]').filter(button => button.dataset.favorite === id).forEach(button => {
       button.setAttribute('aria-pressed', String(saved));
       button.setAttribute('aria-label', `${saved ? 'أزل من المحفوظات' : 'احفظ'} ${byId[id].title}`);
-      button.textContent = saved ? '♥' : '♡';
+      // The book page shows a labelled toggle, shelf cards show only the heart.
+      const icon = button.querySelector('[data-favorite-icon]');
+      if (icon) icon.textContent = saved ? '♥' : '♡'; else button.textContent = saved ? '♥' : '♡';
+      const label = button.querySelector('[data-favorite-label]');
+      if (label) label.textContent = saved ? 'في محفوظاتك' : 'أحفظ في محفوظاتي';
     });
     if (location.hash === '#favorites') renderFavoritesPage();
     toast(saved ? 'أُضيف إلى محفوظاتك' : 'أُزيل من محفوظاتك');
@@ -807,7 +811,8 @@ function renderBookPage(id) {
   const authorSection = authorShelf.length >= 3 ? `<section class="related-books book-detail-shelf"><div class="section-heading compact"><div><p class="eyebrow">قراءة أخرى من المؤلف</p><h2>كتب أخرى لـ <em>${escapeHtml(book.author)}</em></h2></div><a class="underlined-link" href="#author/${encodeURIComponent(book.author)}">ملف المؤلف <span>↖</span></a></div><div id="author-books-carousel"></div></section>` : '';
   const suggestionsSection = `<section class="related-books"><div class="section-heading compact"><div><p class="eyebrow">اقتراحات ذكية من رفوف الغزال</p><h2>قد يعجبك <em>أيضًا</em></h2></div><a class="underlined-link" href="#catalog">استكشف كل الكتب <span>↖</span></a></div><div id="related-books-carousel"></div></section>`;
   const available = Number(book.stock) > 0;
-  $('#book-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="book-detail"><div class="book-detail-cover"><button class="book-cover-zoom" type="button" data-zoom-cover="${escapeHtml(coverPath(book.image || book.display) || coverUrl(book, 'display'))}" aria-label="تكبير غلاف ${escapeHtml(book.title)}"><img src="${coverUrl(book, 'display')}" alt="غلاف ${escapeHtml(book.title)}" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /><span>تكبير الغلاف <b aria-hidden="true">⌕</b></span></button></div><div class="book-detail-copy"><p class="eyebrow">${escapeHtml(book.genre)} / صفحة الكتاب</p><h1 id="book-page-title">${escapeHtml(book.title)}</h1><p class="detail-author">بقلم <a href="#author/${encodeURIComponent(book.author)}">${escapeHtml(book.author)}</a> · <a href="#publisher/${encodeURIComponent(book.publisher)}">${escapeHtml(book.publisher)}</a></p><p class="detail-note">${escapeHtml(book.note)}</p><div class="detail-meta"><div><span>التصنيف الفرعي</span><strong>${escapeHtml(book.genre)}</strong></div><div><span>المؤلف</span><strong>${escapeHtml(book.author)}</strong></div><div><span>السعر</span><strong>${money(book.price)}</strong></div><div><span>التوفر</span><strong>${available ? 'متوفر' : 'غير متوفر حاليًا'}</strong></div></div>${available ? `<button class="button button-dark" data-add="${book.id}">أضف إلى السلة <span>↖</span></button>` : '<p class="stock-empty detail-stock-empty">هذا الكتاب غير متوفر حاليًا.</p>'}</div></div>${suggestionsSection}${publisherSection}${authorSection}`;
+  const saved = favorites.includes(book.id);
+  $('#book-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="book-detail"><div class="book-detail-cover"><button class="book-cover-zoom" type="button" data-zoom-cover="${escapeHtml(coverPath(book.image || book.display) || coverUrl(book, 'display'))}" aria-label="تكبير غلاف ${escapeHtml(book.title)}"><img src="${coverUrl(book, 'display')}" alt="غلاف ${escapeHtml(book.title)}" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='assets/placeholder-cover.svg';}" /><span>تكبير الغلاف <b aria-hidden="true">⌕</b></span></button></div><div class="book-detail-copy"><p class="eyebrow">${escapeHtml(book.genre)} / صفحة الكتاب</p><h1 id="book-page-title">${escapeHtml(book.title)}</h1><p class="detail-author">بقلم <a href="#author/${encodeURIComponent(book.author)}">${escapeHtml(book.author)}</a> · <a href="#publisher/${encodeURIComponent(book.publisher)}">${escapeHtml(book.publisher)}</a></p><p class="detail-note">${escapeHtml(book.note)}</p><div class="detail-meta"><div><span>التصنيف الفرعي</span><strong>${book.genre ? `<a class="detail-genre-link" href="#subgenre/${encodeURIComponent(book.genre)}">${escapeHtml(book.genre)}</a>` : '—'}</strong></div><div><span>المؤلف</span><strong>${escapeHtml(book.author)}</strong></div><div><span>السعر</span><strong>${money(book.price)}</strong></div><div><span>التوفر</span><strong>${available ? 'متوفر' : 'غير متوفر حاليًا'}</strong></div></div><div class="detail-actions">${available ? `<button class="button button-dark" data-add="${book.id}">أضف إلى السلة <span>↖</span></button>` : '<p class="stock-empty detail-stock-empty">هذا الكتاب غير متوفر حاليًا.</p>'}<button class="favorite detail-favorite" type="button" data-favorite="${book.id}" aria-label="${saved ? 'أزل من المحفوظات' : 'احفظ'} ${escapeHtml(book.title)}" aria-pressed="${saved}"><span class="detail-favorite-icon" data-favorite-icon aria-hidden="true">${saved ? '♥' : '♡'}</span><span data-favorite-label>${saved ? 'في محفوظاتك' : 'أحفظ في محفوظاتي'}</span></button></div></div></div>${suggestionsSection}${publisherSection}${authorSection}`;
   const detailPrice = $('#book-page-content .detail-meta div:nth-child(3) strong'); if (detailPrice) detailPrice.innerHTML = priceHtml(book);
   if (book.review) $('#book-page-content .detail-note').textContent = book.review;
   if (publisherShelf.length) renderCarousel('publisher-books-carousel', `publisher-${book.id}`, publisherShelf);
@@ -841,10 +846,33 @@ function renderAuthorPage(name) {
 }
 function renderGenrePage(category) {
   const genre = genres[category] || { title: category || 'التصنيف', description: '' };
+  const shelf = subgenreNames().filter(name => books.some(book => book.category === category && normalizeArabicSearch(book.genre) === normalizeArabicSearch(name)));
   let query = '';
-  $('#genre-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="page-hero genre-hero"><div><p class="eyebrow">الغزال / تصفّح حسب التصنيف</p><h1 id="genre-page-title">${escapeHtml(genre.title)}</h1><p>${escapeHtml(genre.description)}</p></div></div><div class="genre-switcher">${Object.entries(genres).map(([id, item]) => `<a class="${id === category ? 'active' : ''}" href="#genre/${id}">${escapeHtml(item.title)}</a>`).join('')}</div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="genre-search" type="search" placeholder="ابحث داخل ${escapeHtml(genre.title)}" /></label></div><div class="catalog-summary"><strong id="genre-count"></strong><span>كتب مختارة من هذا التصنيف</span></div><div class="catalog-grid" id="genre-books"></div>`;
+  $('#genre-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="page-hero genre-hero"><div><p class="eyebrow">الغزال / تصفّح حسب التصنيف</p><h1 id="genre-page-title">${escapeHtml(genre.title)}</h1><p>${escapeHtml(genre.description)}</p></div></div><div class="genre-switcher">${Object.entries(genres).map(([id, item]) => `<a class="${id === category ? 'active' : ''}" href="#genre/${id}">${escapeHtml(item.title)}</a>`).join('')}</div>${shelf.length ? `<div class="subgenre-row"><span class="subgenre-row-label">الأنواع داخل هذا التصنيف</span>${shelf.map(name => `<a href="#subgenre/${encodeURIComponent(name)}">${escapeHtml(name)}</a>`).join('')}</div>` : ''}<div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="genre-search" type="search" placeholder="ابحث داخل ${escapeHtml(genre.title)}" /></label></div><div class="catalog-summary"><strong id="genre-count"></strong><span>كتب مختارة من هذا التصنيف</span></div><div class="catalog-grid" id="genre-books"></div>`;
   const update = () => { const result = books.filter(book => book.category === category && (!query || normalize(`${book.title} ${book.author} ${book.publisher}`).includes(normalize(query)))); $('#genre-count').textContent = `${result.length} كتاب`; $('#genre-books').innerHTML = result.map(cardTemplate).join(''); observeReveals(); };
   $('#genre-search').addEventListener('input', event => { query = event.target.value; update(); }); update();
+}
+function subgenreNames() { return [...new Set(books.map(book => String(book.genre || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar')); }
+function renderSubgenrePage(name) {
+  const label = String(name || '').trim();
+  const key = normalizeArabicSearch(label);
+  const inGenre = book => normalizeArabicSearch(book.genre) === key;
+  // The subgenre only exists as free text on the books, so the page and its
+  // title are derived from the catalog itself rather than a stored table.
+  const parent = label ? books.find(inGenre)?.category : '';
+  const parentTitle = genres[parent]?.title || parent;
+  let query = '';
+  $('#subgenre-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى كل الكتب</a><div class="page-hero genre-hero"><div><p class="eyebrow">الغزال / تصفّح حسب النوع</p><h1 id="subgenre-page-title">${escapeHtml(label || 'نوع غير محدد')}</h1><p>${parentTitle ? `كل كتب هذا النوع داخل تصنيف <a class="detail-parent-link" href="#genre/${encodeURIComponent(parent)}">${escapeHtml(parentTitle)}</a>.` : 'كل الكتب التي تندرج تحت هذا النوع على رفوف الغزال.'}</p></div></div><div class="genre-switcher">${subgenreNames().map(item => `<a class="${normalizeArabicSearch(item) === key ? 'active' : ''}" href="#subgenre/${encodeURIComponent(item)}">${escapeHtml(item)}</a>`).join('')}</div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="subgenre-search" type="search" placeholder="ابحث داخل ${escapeHtml(label || 'هذا النوع')}" /></label></div><div class="catalog-summary"><strong id="subgenre-count"></strong><span>كتب من هذا النوع</span></div><div class="catalog-grid" id="subgenre-books"></div><p class="empty-state" id="subgenre-empty" hidden></p>`;
+  const update = () => {
+    const result = books.filter(book => inGenre(book) && (!query || normalize(`${book.title} ${book.author} ${book.publisher}`).includes(normalize(query))));
+    $('#subgenre-count').textContent = `${result.length} كتاب`;
+    $('#subgenre-books').innerHTML = result.map(cardTemplate).join('');
+    const empty = $('#subgenre-empty');
+    empty.hidden = result.length > 0;
+    empty.textContent = query ? `لا نتائج لـ «${query}» في هذا النوع.` : 'لا كتب في هذا النوع بعد.';
+    observeReveals();
+  };
+  $('#subgenre-search').addEventListener('input', event => { query = event.target.value; update(); }); update();
 }
 function renderBestsellersPage() {
   const ranked = bestSellerBookIds.map(id => byId[id]).filter(Boolean);
@@ -907,7 +935,7 @@ function renderDashboard() {
 function showRoute() {
   const hash = decodeURIComponent(location.hash.slice(1) || 'home');
   const [route, ...parts] = hash.split('/');
-  const isPage = ['catalog', 'selections', 'new', 'departments', 'publishers', 'book', 'publisher', 'author', 'genre', 'bestsellers', 'collection', 'favorites'].includes(route);
+  const isPage = ['catalog', 'selections', 'new', 'departments', 'publishers', 'book', 'publisher', 'author', 'genre', 'subgenre', 'bestsellers', 'collection', 'favorites'].includes(route);
   homeMain.hidden = isPage; pagesRoot.hidden = !isPage;
   $$('.app-page', pagesRoot).forEach(page => { page.hidden = page.id !== `${route}-page`; });
   if (route === 'catalog') renderCatalogPage();
@@ -919,6 +947,7 @@ function showRoute() {
   if (route === 'publisher') renderPublisherPage(parts.join('/'));
   if (route === 'author') renderAuthorPage(parts.join('/'));
   if (route === 'genre') renderGenrePage(parts[0]);
+  if (route === 'subgenre') renderSubgenrePage(parts.join('/'));
   if (route === 'collection') renderCollectionPage(parts.join('/'));
   if (route === 'bestsellers') renderBestsellersPage();
   if (route === 'favorites') renderFavoritesPage();
