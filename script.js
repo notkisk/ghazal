@@ -413,10 +413,10 @@ function changeQuantity(id, delta) {
   if (!book) return;
   const item = cart.find(entry => entry.id === id);
   if (!item && delta > 0) { if (Number(book.stock) <= 0) { toast('هذا الكتاب غير متوفر حاليًا'); return; } cart.push({ id, qty: 1 }); }
-  else if (item) { item.qty += delta; if (item.qty > Number(book.stock)) { item.qty = Number(book.stock); toast('وصلت إلى الكمية المتوفرة'); } if (item.qty <= 0) cart = cart.filter(entry => entry.id !== id); }
+  else if (item) { item.qty += delta; if (item.qty <= 0) cart = cart.filter(entry => entry.id !== id); }
   syncCart();
 }
-$('.cart-footer').innerHTML = `<div class="cart-totals"><span>المجموع الفرعي</span><strong id="cart-subtotal">٠ د.ج</strong></div><p>تُحسب رسوم التوصيل في الخطوة التالية. الدفع نقدًا عند الاستلام.</p><button id="cart-order" class="button button-dark" type="button">متابعة إلى إتمام الطلب <span aria-hidden="true">↖</span></button>`;
+$('.cart-footer').innerHTML = `<div class="cart-totals"><span>المجموع الفرعي</span><strong id="cart-subtotal">٠ د.ج</strong></div><p>تُحسب رسوم التوصيل في الخطوة التالية. الدفع نقدًا عند الاستلام.</p><div class="cart-footer-actions"><button id="cart-clear" class="button button-outline" type="button">إفراغ السلة</button><button id="cart-order" class="button button-dark" type="button">متابعة إلى إتمام الطلب <span aria-hidden="true">↖</span></button></div>`;
 function renderCart() {
   const count = cartCount();
   const items = cart.map(({ id, qty }) => ({ id, qty, book: byId[id] })).filter(item => item.book);
@@ -436,6 +436,7 @@ $('#cart-items').addEventListener('click', event => {
   if (quantity) changeQuantity(quantity.dataset.id, Number(quantity.dataset.qty));
   if (remove) { cart = cart.filter(entry => entry.id !== remove.dataset.remove); syncCart(); }
 });
+$('#cart-clear').addEventListener('click', () => { if (!cart.length) return; cart = []; syncCart(); toast('أُفرغت السلة'); });
 
 document.body.insertAdjacentHTML('beforeend', `
   <div class="overlay" id="product-overlay" hidden><div class="product-panel" role="dialog" aria-modal="true" aria-label="تفاصيل الكتاب"><button class="close-button" data-close="product-overlay" aria-label="إغلاق">×</button><div id="product-detail"></div></div></div>
