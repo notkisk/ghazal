@@ -80,6 +80,7 @@ body[data-role="admin"] [data-owner-finance],body[data-role="admin"] .dashboard-
 .order-books{min-width:0}.order-book-line{display:grid;grid-template-columns:minmax(0,1fr) 90px;align-items:center;gap:16px;padding:12px 4px;border-bottom:1px solid #dfd1bb}
 .order-book-line>span{min-width:0;display:grid;gap:4px}.order-book-line strong{white-space:normal;overflow-wrap:anywhere;line-height:1.6;font-size:14px}.order-book-line small{color:var(--muted)}
 .order-line-cover{grid-column:1;grid-row:1;width:64px;height:88px;object-fit:cover;border:1px solid #dfd1bb;display:block}
+.publisher-feature-editor[draggable=true]{cursor:grab}.publisher-feature-editor.is-dragging{opacity:.45}.feature-drag-handle{border:1px solid #d9cbb7;background:#fbf8f1;color:var(--brown);padding:7px 10px;cursor:grab;font:12px var(--sans);touch-action:none}.publisher-feature-admin-mark img{width:100%;height:100%;object-fit:contain}
 .order-book-line{direction:ltr;grid-template-columns:64px minmax(0,1fr) 90px;align-items:center;gap:16px;min-height:112px}
 .order-book-line>span{grid-column:2;grid-row:1;direction:rtl;text-align:right}
 .order-book-line>input[type=number]{grid-column:3;grid-row:1}

@@ -323,6 +323,12 @@ const DEFAULT_PUBLISHER_FEATURES = [
   { id:'jamal', publisher:'منشورات الجمل', active:true, layoutVersion:3, logo:'assets/publishers/al-jamal.png', slogan:'أصواتٌ من العالم', kicker:'أصواتٌ لا تشبه سواها', description:'دار عريقة في الترجمة الأدبية والفلسفية، وكتب تمنح القارئ فرصة الإصغاء إلى أصوات مختلفة.', accent:'#bd1d2d', surface:'#e9d8b9', ink:'#271914', mark:'ج' },
   { id:'arab-network', publisher:'الشبكة العربية للأبحاث والنشر', active:true, layoutVersion:3, logo:'assets/publishers/arab-network.png', slogan:'بوابتك نحو عالم المعرفة', kicker:'معرفةٌ عربيةٌ رصينة', description:'كتب الفكر والتاريخ والسياسة التي تمنح السؤال العربي مساحة أوسع.', accent:'#2e579a', surface:'#dbe8ef', ink:'#18243b', mark:'ش' },
   { id:'rafidain', publisher:'دار الرافدين', active:true, layoutVersion:3, logo:'assets/publishers/al-rafidain.png', slogan:'من وادي الرافدين بدأت الكتابة والمدنية', kicker:'للكتاب العربي الجميل', description:'إصدارات تحمل حيوية المكتبة العربية، بين التراث والقراءة المعاصرة.', accent:'#20205e', surface:'#e5e1ee', ink:'#171735', mark:'ر' }
+  ,{ id:'page7', publisher:'صفحة 7', active:true, layoutVersion:3, logo:'assets/publishers/safha.png', slogan:'حكاياتٌ تفتح نوافذ جديدة', kicker:'مساحةٌ للخيال والمعرفة', description:'اكتشف عوالم صفحة 7 المختارة بعناية، من الرواية إلى الفكر.', accent:'#6c345f', surface:'#f3e8f0', ink:'#281d29', mark:'٧' }
+  ,{ id:'dar-masria-lubnania', publisher:'الدار المصرية اللبنانية', active:true, layoutVersion:3, logo:'assets/publishers/aldar-almisriya-allubnaniya.png', slogan:'كتابٌ عربيّ برؤيةٍ عصرية', kicker:'من القاهرة إلى كل قارئ', description:'إصدارات تجمع الأدب والفكر والمعرفة في اختيارات عربية راسخة.', accent:'#17624f', surface:'#e7f0e9', ink:'#172d27', mark:'م' }
+  ,{ id:'mahrousa', publisher:'المحروسة', active:true, layoutVersion:3, logo:'assets/publishers/al-mahrousa.png', slogan:'مساحةٌ للأفكار والناس', kicker:'كتبٌ من قلب المجتمع', description:'عناوين تقترب من الإنسان وتفتح حوارًا مع تفاصيل الحياة.', accent:'#a44832', surface:'#f5e9df', ink:'#35221e', mark:'م' }
+  ,{ id:'jadid-muttahida', publisher:'دار الكتاب الجديد المتحدة', active:true, layoutVersion:3, logo:'assets/publishers/alkitab-aljadeed.png', slogan:'أفقٌ جديد للكتاب العربي', kicker:'فكرٌ وأدبٌ بلا حدود', description:'إصدارات فكرية وأدبية تعبر الحدود وتوسّع أفق القراءة.', accent:'#315c85', surface:'#e8eef4', ink:'#1d2a38', mark:'ج' }
+  ,{ id:'arab-scientific', publisher:'الدار العربية للعلوم ناشرون', active:true, layoutVersion:3, logo:'assets/publishers/arab-scientific.png', slogan:'المعرفة تبدأ من كتاب', kicker:'فكرٌ وأدبٌ وعلوم', description:'مكتبة عربية واسعة من الكتب الفكرية والأدبية والعلمية.', accent:'#16548a', surface:'#e7f0f7', ink:'#16283a', mark:'ع' }
+  ,{ id:'sutoor', publisher:'دار سطور', active:true, layoutVersion:3, logo:'assets/publishers/dar-sutoor.webp', slogan:'سطورٌ تبقى في الذاكرة', kicker:'حكايةٌ تبدأ من هنا', description:'إصدارات عربية معاصرة تجمع متعة الحكاية وعمق الفكرة.', accent:'#b52b55', surface:'#17151b', ink:'#f7f1f2', mark:'س' }
 ];
 const GENERIC_PUBLISHER_FEATURE = { slogan:'', kicker:'إصدارات مختارة', description:'اكتشف كتب هذه الدار من رفوف الغزال.', accent:'#8f5e3b', surface:'#eee2ce', ink:'#1b1915' };
 function mergePublisherFeatureDesign(feature, design) {
@@ -348,7 +354,8 @@ if (!db.prepare("SELECT 1 FROM store_content WHERE key='publisherFeaturesRestore
 // (for example منشورات الجمل) could end up with the generic placeholder design
 // instead of the designed logo, colours, and copy. Merge the shipped designs in
 // once, keeping any custom value an owner has already set.
-const PUBLISHER_FEATURE_DESIGN_VERSION = '2026-11-publisher-design-1';
+const PUBLISHER_FEATURE_DESIGN_VERSION = '2026-11-publisher-design-5';
+const HIDDEN_PUBLISHER_FEATURE_IDS = new Set(['page7','dar-masria-lubnania','mahrousa','jadid-muttahida','arab-scientific','sutoor']);
 function syncPublisherFeatureDesigns() {
   const marker = db.prepare("SELECT value_json FROM store_content WHERE key='publisherFeaturesDesign'").get();
   if (marker && parse(marker.value_json) === PUBLISHER_FEATURE_DESIGN_VERSION) return 0;
@@ -360,6 +367,7 @@ function syncPublisherFeatureDesigns() {
     if (index < 0) index = features.findIndex(feature => feature.id === design.id);
     if (index < 0) { features.push({ ...design }); changed += 1; continue; }
     const next = mergePublisherFeatureDesign(features[index], design);
+    if (HIDDEN_PUBLISHER_FEATURE_IDS.has(design.id)) next.active = false;
     if (JSON.stringify(next) !== JSON.stringify(features[index])) { features[index] = next; changed += 1; }
   }
   if (changed) db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('publisherFeatures', json(features), now());
