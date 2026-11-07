@@ -94,12 +94,20 @@ function requirePermission(req, res, permission) { const user = requireRole(req,
 function audit(user, action, entity, entityId, details) { db.prepare('INSERT INTO audit_log (user_id,action,entity,entity_id,details_json,created_at) VALUES (?,?,?,?,?,?)').run(user?.id || null, action, entity, entityId == null ? null : String(entityId), json(details), now()); }
 function createSession(userId) { const token = crypto.randomBytes(32).toString('base64url'); db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(hash(token), userId, new Date(Date.now() + 8 * 3600e3).toISOString()); return token; }
 function authResponse(user, token) { return { token, user: { id:user.id, email:user.email, role:user.role, permissions:permissionsFor(user) } }; }
-function requestIp(req) { return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim(); }
-function rateLimit(req, key, limit, windowMs) {
-  const bucketKey = `${key}:${requestIp(req)}`; const current = Date.now(); const bucket = rateBuckets.get(bucketKey) || { startedAt: current, count: 0 };
+function requestIp(req) {
+  // Forwarded headers are attacker-controlled unless the origin is reachable
+  // only through the trusted proxy. Keep them disabled by default.
+  if (process.env.GHAZAL_TRUST_PROXY === 'true') {
+    const proxyIp = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'];
+    if (proxyIp) return String(proxyIp).split(',')[0].trim().slice(0, 100) || 'unknown';
+  }
+  return String(req.socket.remoteAddress || 'unknown').slice(0, 100);
+}
+function rateLimit(req, key, limit, windowMs, identity = requestIp(req)) {
+  const bucketKey = `${key}:${identity}`; const current = Date.now(); const bucket = rateBuckets.get(bucketKey) || { startedAt: current, count: 0, windowMs };
   if (current - bucket.startedAt >= windowMs) { bucket.startedAt = current; bucket.count = 0; }
   bucket.count += 1; rateBuckets.set(bucketKey, bucket);
-  if (rateBuckets.size > 5000) for (const [storedKey, stored] of rateBuckets) if (current - stored.startedAt >= windowMs) rateBuckets.delete(storedKey);
+  if (rateBuckets.size > 5000) for (const [storedKey, stored] of rateBuckets) if (current - stored.startedAt >= stored.windowMs) rateBuckets.delete(storedKey);
   return bucket.count <= limit ? 0 : Math.max(1, Math.ceil((bucket.startedAt + windowMs - current) / 1000));
 }
 function recordConversion(eventId, eventName, reference, provider, status, response) { try { db.prepare('INSERT INTO conversion_events (event_id,event_name,reference,provider,status,response_json,created_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET status=excluded.status,response_json=excluded.response_json,created_at=excluded.created_at').run(String(eventId),eventName,reference,provider,status,json(response),now()); } catch (error) { console.error(`conversion_log_${error.message}`); } }
@@ -584,7 +592,7 @@ async function api(req, res, url) {
   res._ghazalGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] || '').toLowerCase());
   try {
     if (req.method === 'GET' && url.pathname === '/api/health') return send(res, 200, { ok:true, service:'ghazal', time:now(), checks:{ database:Boolean(db.prepare('SELECT 1').get()) } });
-    const limited = req.method === 'POST' && url.pathname === '/api/auth/login' ? rateLimit(req, 'login', 10, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/auth/signup' ? rateLimit(req, 'signup', 3, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/orders' ? rateLimit(req, 'orders', 20, 60e3) : req.method === 'POST' && url.pathname === '/api/newsletter' ? rateLimit(req, 'newsletter', 5, 15 * 60e3) : 0;
+    const limited = req.method === 'POST' && url.pathname === '/api/auth/login' ? rateLimit(req, 'login', 10, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/auth/signup' ? rateLimit(req, 'signup', 3, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/orders' ? rateLimit(req, 'orders', 60, 60 * 60e3) : req.method === 'GET' && url.pathname === '/api/orders/lookup' ? rateLimit(req, 'order-lookup', 30, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/newsletter' ? rateLimit(req, 'newsletter', 5, 15 * 60e3) : 0;
     if (limited) return send(res, 429, { error:'rate_limited', retryAfter:limited }, { 'retry-after':String(limited) });
     if (req.method === 'GET' && url.pathname === '/api/auth/status') return send(res, 200, { setupAvailable: !db.prepare('SELECT 1 FROM users LIMIT 1').get() });
     if (req.method === 'GET' && url.pathname === '/api/auth/me') { const user = userFromRequest(req); if (!user) return send(res,401,{error:'unauthorized'}); return send(res,200,{user:{id:user.id,email:user.email,role:user.role,permissions:permissionsFor(user)}}); }
@@ -597,7 +605,7 @@ async function api(req, res, url) {
     if (req.method === 'GET' && url.pathname === '/api/books') return send(res, 200, { books: bookList(url) });
     if (req.method === 'GET' && url.pathname === '/api/collections') return send(res, 200, { collections: collectionList(false) });
     if (req.method === 'GET' && url.pathname === '/api/catalog') return sendCatalog(req, res);
-    if (req.method === 'POST' && url.pathname === '/api/orders') { const body = await readBody(req); const reference = createOrder(body); const order = db.prepare('SELECT subtotal,discount,delivery,total FROM orders WHERE reference=?').get(reference); sendMetaPurchase(body, reference, order.total, body.items || [], req).catch(error => console.error(error.message)); sendTelegramOrderNotification(reference).catch(error => console.error(error.message)); return send(res, 201, { reference, status: 'new', ...order }); }
+    if (req.method === 'POST' && url.pathname === '/api/orders') { const body = await readBody(req); validateOrder(body); const phone = String(body.customer?.phone || '').replace(/\D/g, ''); const phoneLimited = phone ? rateLimit(req, 'orders-phone', 3, 15 * 60e3, `${requestIp(req)}:${phone}`) : 0; if (phoneLimited) return send(res,429,{error:'rate_limited',retryAfter:phoneLimited},{'retry-after':String(phoneLimited)}); const reference = createOrder(body); const order = db.prepare('SELECT subtotal,discount,delivery,total FROM orders WHERE reference=?').get(reference); sendMetaPurchase(body, reference, order.total, body.items || [], req).catch(error => console.error(error.message)); sendTelegramOrderNotification(reference).catch(error => console.error(error.message)); return send(res, 201, { reference, status: 'new', ...order }); }
     if (req.method === 'POST' && url.pathname === '/api/newsletter') {
       const body = await readBody(req); const email = String(body.email || '').trim().toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res,400,{error:'invalid_email'});
