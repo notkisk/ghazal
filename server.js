@@ -485,7 +485,10 @@ async function sendTelegramOrderNotification(reference) {
   const lines = items.map(item => `• ${telegramEscape(item.title)} × ${item.qty} — ${Number(item.unit_price * item.qty).toLocaleString('en-US')} DZD`).join('\n');
   const message = `<b>طلب جديد — الغزال للكتب</b>\n\n<b>${telegramEscape(order.reference)}</b>\nالعميل: ${telegramEscape(customer.customer)}\nالهاتف: ${telegramEscape(customer.phone)}\nالموقع: ${telegramEscape(customer.wilaya)}، ${telegramEscape(customer.commune)}\nالشحن: ${order.shipment_type === 'office' ? 'مكتب' : 'منزل'}\n\n<b>الكتب</b>\n${lines}\n\n<b>الإجمالي: ${Number(order.total).toLocaleString('en-US')} DZD</b>`;
   const response = await fetch(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ chat_id:chatId, text:message, parse_mode:'HTML', disable_web_page_preview:true }) });
-  if (!response.ok) throw new Error(`telegram_${response.status}`);
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`telegram_${response.status}: ${details.slice(0, 500)}`);
+  }
 }
 function validateOrder(body) {
   if (!body.customer || !Array.isArray(body.items) || !body.items.length || !body.shipping) throw new Error('order_fields_required');
