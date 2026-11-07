@@ -34,6 +34,7 @@ window.GhazalAPI = (() => {
     updateCollection: (token, id, changes) => request(`/api/admin/collections/${encodeURIComponent(id)}`, { method:'PATCH', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(changes) }),
     deleteCollection: (token, id) => request(`/api/admin/collections/${encodeURIComponent(id)}`, { method:'DELETE', headers:{ authorization:`Bearer ${token}` } }),
     deleteOrder: (token, reference) => request(`/api/admin/orders/${encodeURIComponent(reference)}`, { method:'DELETE', headers:{ authorization:`Bearer ${token}` } }),
+    deleteOrders: (token, references) => request('/api/admin/orders', { method:'DELETE', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ references }) }),
     deleteBook: (token, bookId) => request(`/api/admin/books/${encodeURIComponent(bookId)}`, { method:'DELETE', headers:{ authorization:`Bearer ${token}` } }),
     recordExport: (token, fingerprint, references, filename) => request('/api/admin/exports', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ fingerprint:`${fingerprint}-${Date.now()}-${Math.random().toString(16).slice(2)}`, references, filename }) }),
     adminConversions: (token) => request('/api/admin/conversions', { headers:{ authorization:`Bearer ${token}` } }),
