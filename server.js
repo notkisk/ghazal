@@ -337,6 +337,7 @@ const DEFAULT_PUBLISHER_FEATURES = [
   ,{ id:'jadid-muttahida', publisher:'دار الكتاب الجديد المتحدة', active:true, layoutVersion:3, logo:'assets/publishers/alkitab-aljadeed.png', slogan:'أفقٌ جديد للكتاب العربي', kicker:'فكرٌ وأدبٌ بلا حدود', description:'إصدارات فكرية وأدبية تعبر الحدود وتوسّع أفق القراءة.', accent:'#315c85', surface:'#e8eef4', ink:'#1d2a38', mark:'ج' }
   ,{ id:'arab-scientific', publisher:'الدار العربية للعلوم ناشرون', active:true, layoutVersion:3, logo:'assets/publishers/arab-scientific.png', slogan:'المعرفة تبدأ من كتاب', kicker:'فكرٌ وأدبٌ وعلوم', description:'مكتبة عربية واسعة من الكتب الفكرية والأدبية والعلمية.', accent:'#16548a', surface:'#e7f0f7', ink:'#16283a', mark:'ع' }
   ,{ id:'sutoor', publisher:'دار سطور', active:true, layoutVersion:3, logo:'assets/publishers/dar-sutoor.webp', slogan:'سطورٌ تبقى في الذاكرة', kicker:'حكايةٌ تبدأ من هنا', description:'إصدارات عربية معاصرة تجمع متعة الحكاية وعمق الفكرة.', accent:'#b52b55', surface:'#17151b', ink:'#f7f1f2', mark:'س' }
+  ,{ id:'afaq', publisher:'آفاق للنشر والتوزيع', active:true, layoutVersion:3, logo:'assets/publishers/afaq-books.png', slogan:'كتبٌ تفتح آفاقًا جديدة', kicker:'معرفةٌ تمتد إلى العالم', description:'اكتشف إصدارات آفاق للنشر والتوزيع من رفوف الغزال.', accent:'#f5ae0b', surface:'#fff5d9', ink:'#12334a', mark:'آ' }
 ];
 const GENERIC_PUBLISHER_FEATURE = { slogan:'', kicker:'إصدارات مختارة', description:'اكتشف كتب هذه الدار من رفوف الغزال.', accent:'#8f5e3b', surface:'#eee2ce', ink:'#1b1915' };
 function mergePublisherFeatureDesign(feature, design) {
@@ -362,7 +363,7 @@ if (!db.prepare("SELECT 1 FROM store_content WHERE key='publisherFeaturesRestore
 // (for example منشورات الجمل) could end up with the generic placeholder design
 // instead of the designed logo, colours, and copy. Merge the shipped designs in
 // once, keeping any custom value an owner has already set.
-const PUBLISHER_FEATURE_DESIGN_VERSION = '2026-11-publisher-design-5';
+const PUBLISHER_FEATURE_DESIGN_VERSION = '2026-11-publisher-design-6';
 const HIDDEN_PUBLISHER_FEATURE_IDS = new Set(['page7','dar-masria-lubnania','mahrousa','jadid-muttahida','arab-scientific','sutoor']);
 function syncPublisherFeatureDesigns() {
   const marker = db.prepare("SELECT value_json FROM store_content WHERE key='publisherFeaturesDesign'").get();
