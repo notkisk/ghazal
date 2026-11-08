@@ -97,6 +97,10 @@ img.cover.edition-image{display:block;padding:0;object-fit:cover;object-position
 .publisher-feature .shelf-carousel-arrow{background:rgba(255,255,255,.9);border-color:color-mix(in srgb,var(--publisher-ink) 22%,transparent);color:#241f1a}
 .publisher-feature .shelf-carousel-arrow:hover{background:var(--publisher-accent);border-color:var(--publisher-accent);color:#fff}
 .publisher-feature-copy{direction:rtl;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:right;padding:44px 40px;border-left:1px solid color-mix(in srgb,var(--publisher-ink) 13%,transparent)}
+.publisher-feature-copy{min-width:0}
+.publisher-feature h2,.publisher-feature-description{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.round-add{flex:0 0 43px;aspect-ratio:1/1;display:grid;place-items:center;padding:0;line-height:1}
+.publisher-monogram img{width:72%;height:72%;padding:0;object-fit:contain;border-radius:50%}
 .publisher-feature-mark{width:84px;height:84px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--publisher-ink) 30%,transparent);border-radius:50%;font:44px var(--serif);margin-bottom:12px;color:var(--publisher-accent)}
 .publisher-feature-logo{width:130px;height:84px;display:flex;align-items:center;justify-content:flex-start;margin-bottom:12px}
 .publisher-feature-logo img{width:100%;height:100%;object-fit:contain;object-position:right center;mix-blend-mode:multiply}
@@ -148,6 +152,7 @@ img.cover.edition-image{display:block;padding:0;object-fit:cover;object-position
 }
 @media(max-width:560px){
   .publisher-feature-copy{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"logo kicker" "logo title" "desc desc" "link link";align-items:center;column-gap:14px;row-gap:3px;padding:18px 18px 20px}
+  .publisher-feature-copy{width:100%;min-width:0}
   .publisher-feature-logo{grid-area:logo;width:84px;height:60px;margin:0}
   .publisher-feature-kicker{grid-area:kicker;margin:0;font-size:11px;align-self:end}
   .publisher-feature h2{grid-area:title;font-size:28px;margin:0;align-self:start}
