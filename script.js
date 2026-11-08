@@ -116,10 +116,16 @@ function applyCatalogPayload(payload, options = {}) {
     catalogLoaded = true;
     renderCategoryUI(); renderDepartmentLinks(); renderPublisherGrid(); renderHeroArt(); renderBooks();
     renderFeaturedSelections(); renderHomeShelves(); renderHomeSections(); renderFeaturedPublishers();
-    if (location.hash === '#catalog') renderCatalogPage();
     // Routes rendered before the asynchronous catalog response have no data.
-    // Re-render all catalog-backed pages once the server payload arrives.
-    if (['#departments', '#publishers'].includes(location.hash) || /^#(genre|collection|publisher|book|author)\//.test(location.hash)) showRoute();
+    // Re-render the active catalog-backed page once the server payload arrives.
+    if (location.hash === '#catalog') renderCatalogPage();
+    if (location.hash === '#selections') renderSelectionsPage();
+    if (location.hash === '#new') renderNewPage();
+    if (location.hash === '#departments') renderDepartmentsPage();
+    if (location.hash === '#publishers') renderPublishersPage();
+    if (location.hash === '#bestsellers') renderBestsellersPage();
+    if (location.hash === '#favorites') renderFavoritesPage();
+    if (/^#(genre|collection|publisher|book|author)\//.test(location.hash)) showRoute();
     lastCatalogSignature = signature;
   } finally {
     suppressRevealEntrance = false;
@@ -666,7 +672,8 @@ $('#order-lookup-button').addEventListener('click', async () => { const referenc
 
 $('#search-input').addEventListener('input', event => {
   const query = normalizeArabicSearch(event.target.value);
-  const results = books.filter(book => normalizeArabicSearch(`${book.title} ${book.author} ${book.publisher}`).includes(query));
+  const isbnQuery = normalizeIsbn(event.target.value);
+  const results = books.filter(book => normalizeArabicSearch(`${book.title} ${book.author} ${book.publisher}`).includes(query) || (isbnQuery.length >= 3 && normalizeIsbn(book.isbn).includes(isbnQuery)));
   $('#search-results').innerHTML = query ? (results.length ? results.map(book => `<button class="search-result" data-search-id="${book.id}"><img src="${coverUrl(book)}" alt="" /><span><strong>${book.title}</strong><small>${book.author} · ${money(book.price)}</small></span><span>↖</span></button>`).join('') : '<p class="search-empty">لم نجد هذا العنوان. جرّب كلمة أخرى.</p>') : '<p class="search-empty">جرّب البحث عن كتاب أو اسم مؤلف.</p>';
 });
 $('#search-results').addEventListener('click', event => {
@@ -728,6 +735,9 @@ const homeMain = document.querySelector('body > main:not(#app-pages)');
 const pagesRoot = $('#app-pages');
 const normalizeArabicSearch = value => String(value ?? '').normalize('NFKD').replace(/[\u064B-\u065F\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').toLocaleLowerCase('ar').trim();
 const normalize = normalizeArabicSearch;
+function normalizeIsbn(value) {
+  return String(value ?? '').replace(/[٠-٩۰-۹]/g, digit => String(digit.charCodeAt(0) >= 0x06f0 ? digit.charCodeAt(0) - 0x06f0 : digit.charCodeAt(0) - 0x0660)).replace(/^\s*ISBN(?:-1[03])?\s*/i, '').toUpperCase().replace(/[^0-9X]/g, '');
+}
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
 const genreMatches = (book, selected) => selected === 'all' || normalizeArabicSearch(book.genre).includes(normalizeArabicSearch(selected));
 let catalogFilter = 'all';
@@ -744,6 +754,7 @@ let adminTab = 'books';
 
 function catalogResults() {
   const query = normalize(catalogQuery);
+  const isbnQuery = normalizeIsbn(catalogQuery);
   const min = catalogPriceMin === '' ? null : Number(catalogPriceMin);
   const max = catalogPriceMax === '' ? null : Number(catalogPriceMax);
   let result = books.filter(book => {
@@ -752,7 +763,7 @@ function catalogResults() {
       (catalogPublisher === 'all' || book.publisher === catalogPublisher) &&
       genreMatches(book, catalogGenre) &&
       (min === null || price >= min) && (max === null || price <= max) &&
-      (!query || normalize(`${book.title} ${book.author} ${book.publisher} ${book.genre} ${book.isbn || ''}`).includes(query));
+      (!query || normalize(`${book.title} ${book.author} ${book.publisher} ${book.genre}`).includes(query) || (isbnQuery.length >= 3 && normalizeIsbn(book.isbn).includes(isbnQuery)));
   });
   if (catalogSort === 'featured') { const ranks = new Map((featuredBookIds || []).map((id, index) => [id, index])); result = [...result].sort((a, b) => (ranks.get(a.id) ?? 999) - (ranks.get(b.id) ?? 999)); }
   if (catalogSort === 'title') result = [...result].sort((a, b) => a.title.localeCompare(b.title, 'ar'));
