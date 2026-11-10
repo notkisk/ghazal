@@ -321,6 +321,30 @@ function resetCatalogOnce() {
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
 if (resetCatalogOnce()) console.log('Ghazal: catalog reset to an empty state (re-import your books to rebuild it)');
+function seedOpeningStockLedger() {
+  const migrationKey = 'inventoryOpeningStockLedger';
+  if (db.prepare('SELECT 1 FROM store_content WHERE key=?').get(migrationKey)) return 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const soldRows = db.prepare(`SELECT b.id book_id,MAX(0,COALESCE(s.units,0)-COALESCE(r.returned,0)) sold FROM books b
+      LEFT JOIN (SELECT book_id,SUM(qty) units FROM reservations WHERE settled_at IS NOT NULL GROUP BY book_id) s ON s.book_id=b.id
+      LEFT JOIN (SELECT book_id,SUM(quantity) returned FROM restocks WHERE reason='customer_return' GROUP BY book_id) r ON r.book_id=b.id`).all();
+    const soldByBook = new Map(soldRows.map(row => [row.book_id, Number(row.sold) || 0]));
+    const books = db.prepare('SELECT id,stock FROM books').all();
+    const priorPurchases = db.prepare("SELECT COALESCE(SUM(quantity),0) quantity FROM restocks WHERE book_id=? AND reason<>'customer_return'");
+    const addOpeningStock = db.prepare("INSERT INTO restocks (book_id,quantity,reason,created_at) VALUES (?,?,?,?)");
+    for (const book of books) {
+      const alreadySeeded = db.prepare("SELECT 1 FROM restocks WHERE book_id=? AND reason='opening_stock' LIMIT 1").get(book.id);
+      if (alreadySeeded) continue;
+      const acquiredBeforeLedger = Math.max(0, Number(book.stock) + (soldByBook.get(book.id) || 0) - Number(priorPurchases.get(book.id).quantity || 0));
+      if (acquiredBeforeLedger) addOpeningStock.run(book.id, acquiredBeforeLedger, 'opening_stock', now());
+    }
+    db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?)').run(migrationKey, json(true), now());
+    db.exec('COMMIT');
+    return books.length;
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+seedOpeningStockLedger();
 const configuredPassword = process.env.GHAZAL_ADMIN_PASSWORD;
 if (!db.prepare('SELECT 1 FROM users LIMIT 1').get() && configuredPassword) db.prepare('INSERT INTO users (email,password_hash,role,created_at) VALUES (?,?,?,?)').run(process.env.GHAZAL_ADMIN_EMAIL || 'owner@alghazal.local', passwordHash(configuredPassword), 'owner', now());
 const emptyContent = { genres:'{}', bookGenres:'[]', discounts:'[]', featured:'[]', authorProfiles:'{}', publisherFeatures:'[]', homeSections:'[]' };
@@ -446,6 +470,38 @@ function catalogPayload() {
   const bookGenres = deriveBookGenres(books);
   const authorSpotlight = Object.entries(profiles).map(([name, profile]) => ({ name, ...profile, bookIds: db.prepare('SELECT id FROM books WHERE author=? ORDER BY title').all(name).map(row => row.id) })).filter(author => author.bio && author.bookIds.length >= 2).sort((a,b) => Number(b.featured) - Number(a.featured) || b.bookIds.length - a.bookIds.length)[0] || null;
   return { books, publishers: db.prepare('SELECT * FROM publishers ORDER BY name').all(), genres, bookGenres, discounts: contentValue('discounts', []), featuredBookIds: fallbackFeatured, publisherFeatures: contentValue('publisherFeatures', []), homeSections: contentValue('homeSections', []), bestSellerBookIds, bestSellerSales: bestSellerRows, bestSellerWindow: weeklySales.length ? 'weekly' : allTimeSales.length ? 'all-time' : 'none', authorProfiles: profiles, authorSpotlight, collections: collectionList(false) };
+}
+function inventoryReportRows() {
+  return db.prepare(`SELECT b.*,b.stock-b.reserved available,
+      COALESCE(p.purchased,0) purchased,
+      MAX(0,COALESCE(s.units,0)-COALESCE(r.returned,0)) sold
+    FROM books b
+    LEFT JOIN (SELECT book_id,SUM(quantity) purchased FROM restocks WHERE reason<>'customer_return' GROUP BY book_id) p ON p.book_id=b.id
+    LEFT JOIN (SELECT book_id,SUM(qty) units FROM reservations WHERE settled_at IS NOT NULL GROUP BY book_id) s ON s.book_id=b.id
+    LEFT JOIN (SELECT book_id,SUM(quantity) returned FROM restocks WHERE reason='customer_return' GROUP BY book_id) r ON r.book_id=b.id
+    ORDER BY b.title`).all();
+}
+function salesReportRows(startDate, endDate, scope = 'all') {
+  const validDate = value => {
+    if (!value) return true;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0,10) === value;
+  };
+  if (!validDate(startDate) || !validDate(endDate) || Boolean(startDate) !== Boolean(endDate) || (startDate && startDate > endDate)) throw new Error('invalid_sales_report_range');
+  if (!['all','confirmed'].includes(scope)) throw new Error('invalid_sales_report_scope');
+  const conditions = [];
+  const params = [];
+  const algeriaDayStart = value => { const [year,month,day] = value.split('-').map(Number); return new Date(Date.UTC(year,month-1,day)-60*60*1000).toISOString(); };
+  if (startDate) { conditions.push('o.created_at>=?'); params.push(algeriaDayStart(startDate)); }
+  if (endDate) { const afterEnd = new Date(`${endDate}T12:00:00.000Z`); afterEnd.setUTCDate(afterEnd.getUTCDate()+1); conditions.push('o.created_at<?'); params.push(algeriaDayStart(afterEnd.toISOString().slice(0,10))); }
+  conditions.push(scope === 'confirmed' ? "o.status IN ('confirmed','preparing','shipped','delivered')" : "o.status NOT IN ('cancelled','returned')");
+  const orders = db.prepare(`SELECT o.* FROM orders o WHERE ${conditions.join(' AND ')} ORDER BY o.created_at,o.reference`).all(...params).map(order => {
+    const customer = parse(order.customer_json);
+    const items = db.prepare('SELECT book_id id,title,qty,unit_price FROM order_items WHERE order_id=? ORDER BY title,book_id').all(order.id).map(item => ({ ...item, qty:Number(item.qty), unit_price:Number(item.unit_price), line_total:Number(item.qty)*Number(item.unit_price) }));
+    return { reference:order.reference, created_at:order.created_at, status:order.status, subtotal:Number(order.subtotal), discount:Number(order.discount), delivery:Number(order.delivery), total:Number(order.total), items, book_count:items.reduce((sum,item)=>sum+item.qty,0), books_total:Math.max(0,Number(order.subtotal)-Number(order.discount)), customer_name:String(customer.customer || '') };
+  });
+  return { startDate:startDate || '', endDate:endDate || '', scope, orders, totals:orders.reduce((totals,order)=>({ orders:totals.orders+1, book_count:totals.book_count+order.book_count, books_total:totals.books_total+order.books_total, discount:totals.discount+order.discount, delivery:totals.delivery+order.delivery, total:totals.total+order.total }),{ orders:0,book_count:0,books_total:0,discount:0,delivery:0,total:0 }) };
 }
 // The public catalog is identical for every visitor, so build it at most once
 // per content change and serve a pre-compressed copy. The cache is keyed by a
@@ -627,6 +683,8 @@ async function api(req, res, url) {
     if (req.method === 'GET' && url.pathname === '/api/admin/orders') { const viewer = requirePermission(req,res,'view_orders'); if (!viewer) return; const orders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all().map(orderView); return send(res, 200, { orders }); }
     if (req.method === 'DELETE' && url.pathname === '/api/admin/orders') { const body = await readBody(req); const references = Array.isArray(body.references) ? [...new Set(body.references.map(value => String(value || '').trim()).filter(Boolean))] : []; if (!references.length || references.length > 500 || references.some(reference => !/^GZ-[A-Z0-9-]{8,32}$/.test(reference))) return send(res,400,{error:'invalid_orders'}); const placeholders = references.map(() => '?').join(','); const matches = db.prepare(`SELECT id,reference FROM orders WHERE reference IN (${placeholders})`).all(...references); if (matches.length !== references.length) return send(res,404,{error:'orders_not_found'}); db.exec('BEGIN IMMEDIATE'); try { const release = db.prepare('SELECT * FROM reservations WHERE order_id=? AND released_at IS NULL'); const releaseBook = db.prepare('UPDATE books SET reserved=MAX(0,reserved-?),updated_at=? WHERE id=?'); const remove = db.prepare('DELETE FROM orders WHERE id=?'); for (const order of matches) { for (const item of release.all(order.id)) releaseBook.run(item.qty,now(),item.book_id); remove.run(order.id); audit(user,'delete','order',order.reference,{bulk:true}); } db.exec('COMMIT'); return send(res,200,{ok:true,deleted:matches.length,references:matches.map(order=>order.reference)}); } catch (error) { db.exec('ROLLBACK'); throw error; } }
     if (req.method === 'GET' && url.pathname === '/api/admin/catalog') { const viewer = requirePermission(req,res,'view_catalog'); if (!viewer) return; return send(res, 200, catalogPayload()); }
+    if (req.method === 'GET' && url.pathname === '/api/admin/inventory-report') { const viewer = requirePermission(req,res,'view_catalog'); if (!viewer) return; return send(res,200,{books:inventoryReportRows()}); }
+    if (req.method === 'GET' && url.pathname === '/api/admin/sales-report') { const viewer = requirePermission(req,res,'view_finance'); if (!viewer) return; try { return send(res,200,salesReportRows(url.searchParams.get('from') || '',url.searchParams.get('to') || '',url.searchParams.get('scope') || 'all')); } catch (error) { return send(res,400,{error:error.message || 'invalid_sales_report_range'}); } }
     if (req.method === 'POST' && url.pathname === '/api/admin/covers') {
       const editor = requirePermission(req,res,'edit_catalog'); if (!editor) return;
       const body = await readBody(req);
@@ -677,7 +735,9 @@ async function api(req, res, url) {
       const body = await readBody(req); const books = Array.isArray(body.books) ? body.books : []; const publishers = Array.isArray(body.publishers) ? body.publishers : []; const stamp = now();
       db.exec('BEGIN IMMEDIATE'); try {
         const bookUpsert = db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,isbn,pages,image,thumb,display,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,author=excluded.author,publisher=excluded.publisher,category=excluded.category,genre=excluded.genre,price=excluded.price,stock=excluded.stock,isbn=excluded.isbn,pages=excluded.pages,image=excluded.image,thumb=COALESCE(excluded.thumb,books.thumb),display=COALESCE(excluded.display,books.display),note=excluded.note,updated_at=excluded.updated_at');
-        for (const book of books) { if (!book.id || !book.title || !book.author || !book.publisher) throw new Error('invalid_book'); const pages = Math.trunc(Number(book.pages)); bookUpsert.run(String(book.id),String(book.title),String(book.author),String(book.publisher),String(book.category || 'غير مصنف'),String(book.genre || 'عام'),Math.max(0,Number(book.price)||0),Math.max(0,Number(book.stock)||0),String(book.isbn || ''),Number.isFinite(pages) && pages > 0 ? pages : null,String(book.image || ''),book.thumb ? String(book.thumb) : null,book.display ? String(book.display) : null,String(book.note || book.review || ''),stamp,stamp); }
+        const findExistingBook = db.prepare('SELECT 1 FROM books WHERE id=?');
+        const recordOpeningStock = db.prepare("INSERT INTO restocks (book_id,quantity,reason,user_id,created_at) VALUES (?,?, 'opening_stock',?,?)");
+        for (const book of books) { if (!book.id || !book.title || !book.author || !book.publisher) throw new Error('invalid_book'); const id = String(book.id); const existed = Boolean(findExistingBook.get(id)); const stock = Math.max(0,Number(book.stock)||0); const pages = Math.trunc(Number(book.pages)); bookUpsert.run(id,String(book.title),String(book.author),String(book.publisher),String(book.category || 'غير مصنف'),String(book.genre || 'عام'),Math.max(0,Number(book.price)||0),stock,String(book.isbn || ''),Number.isFinite(pages) && pages > 0 ? pages : null,String(book.image || ''),book.thumb ? String(book.thumb) : null,book.display ? String(book.display) : null,String(book.note || book.review || ''),stamp,stamp); if (!existed && stock > 0) recordOpeningStock.run(id,stock,user.id,stamp); }
         // Publishers, authors, categories, and sub-categories are derived from
         // the catalog itself so an uploaded spreadsheet is the single source of
         // truth. Existing descriptions survive when the name is unchanged.
@@ -777,4 +837,4 @@ const staticServer = http.createServer(async (req,res) => {
   return useGzip ? source.pipe(zlib.createGzip({ level:zlib.constants.Z_BEST_SPEED })).pipe(res) : source.pipe(res);
 });
 if (require.main === module) staticServer.listen(Number(process.env.PORT || 3000), () => console.log(`Ghazal listening on http://localhost:${process.env.PORT || 3000}`));
-module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, repairCorruptedTextOnce, syncPublisherFeatureDesigns, cacheRemoteCovers, storeCover, sanitizeHomeSections, HOME_SECTION_PLACEMENTS, COVERS_DIR };
+module.exports = { db, server:staticServer, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, inventoryReportRows, salesReportRows, seedOpeningStockLedger, migrateEmbeddedCovers, repairCorruptedText, repairCorruptedTextOnce, syncPublisherFeatureDesigns, cacheRemoteCovers, storeCover, sanitizeHomeSections, HOME_SECTION_PLACEMENTS, COVERS_DIR };

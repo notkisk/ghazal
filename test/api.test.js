@@ -9,7 +9,7 @@ const zlib = require('node:zlib');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghazal-api-'));
 process.env.GHAZAL_DATA_DIR = dataDir;
 process.env.GHAZAL_ADMIN_PASSWORD = 'secret';
-const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, migrateEmbeddedCovers, repairCorruptedText, syncPublisherFeatureDesigns, COVERS_DIR } = require('../server');
+const { db, server, createOrder, transitionOrder, passwordHash, sendMetaPurchase, subscribeNewsletter, orderView, permissionsFor, can, catalogPayload, inventoryReportRows, salesReportRows, migrateEmbeddedCovers, repairCorruptedText, syncPublisherFeatureDesigns, COVERS_DIR } = require('../server');
 
 // The production catalog now starts empty and is rebuilt from spreadsheets, so
 // the test suite seeds its own deterministic fixtures after the server boots.
@@ -194,6 +194,80 @@ test('catalog sync stores the optional page count without requiring it', async (
   } finally {
     db.prepare('DELETE FROM books WHERE id IN (?,?)').run('pages-test', 'no-pages-test');
     await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('inventory report keeps bought copies stable when catalog stock is changed and counts completed sales', async () => {
+  const base = await listen();
+  const token = await ownerToken(base);
+  const id = `inventory-ledger-${Date.now()}`;
+  const headers = { 'content-type':'application/json', authorization:`Bearer ${token}` };
+  const book = { id, title:'كتاب سجل المخزون', author:'كاتب السجل', publisher:'دار الاختبار', category:'literature', genre:'رواية', price:1200, stock:8, image:'' };
+  let reference = '';
+  try {
+    const firstSync = await fetch(`${base}/api/admin/catalog`, { method:'PUT', headers, body:JSON.stringify({ books:[book] }) });
+    assert.equal(firstSync.status, 200);
+    assert.equal(db.prepare("SELECT SUM(quantity) quantity FROM restocks WHERE book_id=? AND reason<>'customer_return'").get(id).quantity, 8);
+
+    reference = createOrder({ customer:{customer:'اختبار المخزون',phone:'0555555555'}, items:[{id,qty:2}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',price:9999} });
+    transitionOrder(reference, 'confirmed', '', null);
+
+    const changedStockSync = await fetch(`${base}/api/admin/catalog`, { method:'PUT', headers, body:JSON.stringify({ books:[{ ...book, stock:20 }] }) });
+    assert.equal(changedStockSync.status, 200);
+    const response = await fetch(`${base}/api/admin/inventory-report`, { headers:{ authorization:`Bearer ${token}` } });
+    assert.equal(response.status, 200);
+    const report = (await response.json()).books.find(item => item.id === id);
+    assert.deepEqual([report.purchased,report.sold,report.stock,report.reserved,report.available], [8,2,20,0,20]);
+    assert.equal(inventoryReportRows().find(item => item.id === id).purchased, 8);
+
+    const receipt = await fetch(`${base}/api/admin/restock`, { method:'POST', headers, body:JSON.stringify({ bookId:id, quantity:5, reason:'supplier_purchase' }) });
+    assert.equal(receipt.status, 200);
+    const afterReceipt = inventoryReportRows().find(item => item.id === id);
+    assert.deepEqual([afterReceipt.purchased,afterReceipt.sold,afterReceipt.stock,afterReceipt.available], [13,2,25,25]);
+  } finally {
+    if (reference) db.prepare('DELETE FROM orders WHERE reference=?').run(reference);
+    db.prepare("DELETE FROM audit_log WHERE entity='book' AND entity_id=? AND action='restock'").run(id);
+    db.prepare('DELETE FROM restocks WHERE book_id=?').run(id);
+    db.prepare('DELETE FROM books WHERE id=?').run(id);
+    db.prepare("DELETE FROM publishers WHERE name='دار الاختبار' AND NOT EXISTS (SELECT 1 FROM books WHERE publisher='دار الاختبار')").run();
+    await closeServer();
+  }
+});
+
+test('sales report returns a date-bounded order sheet and item details with shipment totals', async () => {
+  const base = await listen();
+  const token = await ownerToken(base);
+  const id = `sales-report-book-${Date.now()}`;
+  const stamp = new Date().toISOString();
+  db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,image,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(id,'كتاب تقرير المبيعات','كاتب التقرير','دار الاختبار','literature','رواية',1300,20,'','',stamp,stamp);
+  const todayParts = new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Algiers',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(stamp));
+  const today = `${todayParts.find(part=>part.type==='year').value}-${todayParts.find(part=>part.type==='month').value}-${todayParts.find(part=>part.type==='day').value}`;
+  const yesterdayDate = new Date(`${today}T00:00:00.000Z`); yesterdayDate.setUTCDate(yesterdayDate.getUTCDate()-1);
+  const yesterday = yesterdayDate.toISOString().slice(0,10);
+  const references = [];
+  try {
+    const makeOrder = name => createOrder({ customer:{customer:name,phone:'0555555555'}, items:[{id,qty:2}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',price:0} });
+    const included = makeOrder('طلب ضمن الفترة'); references.push(included);
+    const cancelled = makeOrder('طلب ملغى'); references.push(cancelled); transitionOrder(cancelled,'cancelled','',null);
+    const outside = makeOrder('طلب خارج الفترة'); references.push(outside);
+    db.prepare('UPDATE orders SET created_at=? WHERE reference=?').run(`${yesterday}T12:00:00.000Z`,outside);
+
+    const response = await fetch(`${base}/api/admin/sales-report?from=${today}&to=${today}&scope=all`,{headers:{authorization:`Bearer ${token}`}});
+    assert.equal(response.status,200);
+    const report=await response.json();
+    assert.deepEqual(report.orders.map(order=>order.reference),[included]);
+    const order=report.orders[0];
+    assert.deepEqual([order.book_count,order.items.length,order.items[0].title,order.items[0].qty,order.items[0].line_total],[2,1,'كتاب تقرير المبيعات',2,2600]);
+    assert.equal(order.delivery,db.prepare('SELECT delivery FROM orders WHERE reference=?').get(included).delivery);
+    assert.equal(order.total,order.books_total+order.delivery);
+    assert.deepEqual(report.totals,{orders:1,book_count:2,books_total:2600,discount:0,delivery:order.delivery,total:order.total});
+    assert.deepEqual(salesReportRows(today,today,'confirmed').orders,[]);
+    const badRange=await fetch(`${base}/api/admin/sales-report?from=${today}&to=${yesterday}`,{headers:{authorization:`Bearer ${token}`}});
+    assert.equal(badRange.status,400);
+  } finally {
+    for (const reference of references) db.prepare('DELETE FROM orders WHERE reference=?').run(reference);
+    db.prepare('DELETE FROM books WHERE id=?').run(id);
+    await closeServer();
   }
 });
 

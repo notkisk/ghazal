@@ -101,6 +101,19 @@ img.cover.edition-image{display:block;padding:0;object-fit:cover;object-position
 .publisher-feature h2,.publisher-feature-description{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .round-add{flex:0 0 43px;aspect-ratio:1/1;display:grid;place-items:center;padding:0;line-height:1}
 .publisher-monogram img{width:72%;height:72%;padding:0;object-fit:contain;border-radius:50%}
+.publisher-monogram--image{width:118px;height:76px;border:0;border-radius:0;background:transparent;color:inherit;margin-bottom:12px;overflow:visible}
+.publisher-monogram--image img{width:100%;height:100%;object-fit:contain;border-radius:0;mix-blend-mode:multiply}
+.publisher-monogram--small{width:66px;height:56px}
+.publisher-monogram--wide{width:148px;height:76px}
+.publisher-monogram--circle img{border-radius:50%;object-fit:cover}
+.publisher-monogram--large img{transform:scale(1.35)}
+.publisher:hover .publisher-monogram--image{background:transparent;rotate:0}
+.publisher-monogram--color img,.profile-logo--image img.profile-logo__image--color{mix-blend-mode:normal}
+.profile-logo--image{border-radius:0;background:transparent;box-shadow:none;padding:8px}
+.profile-logo--image img{width:100%;height:100%;object-fit:contain;mix-blend-mode:multiply}
+.profile-logo--image img.profile-logo__image--circle{border-radius:50%;object-fit:cover}
+.profile-logo--image img.profile-logo__image--small{width:70%;height:70%}
+.profile-logo--image img.profile-logo__image--wide{width:100%;height:72%}
 .publisher-feature-mark{width:84px;height:84px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--publisher-ink) 30%,transparent);border-radius:50%;font:44px var(--serif);margin-bottom:12px;color:var(--publisher-accent)}
 .publisher-feature-logo{width:130px;height:84px;display:flex;align-items:center;justify-content:flex-start;margin-bottom:12px}
 .publisher-feature-logo img{width:100%;height:100%;object-fit:contain;object-position:right center;mix-blend-mode:multiply}
@@ -447,3 +460,59 @@ img.cover.edition-image{display:block;padding:0;object-fit:cover;object-position
 .subgenre-row a{padding:7px 14px;border:1px solid var(--line);border-radius:999px;color:var(--ink);font-size:11px;transition:border-color .2s,color .2s,background .2s}
 .subgenre-row a:hover{border-color:var(--brown);color:var(--brown)}
 .asterisk,.marquee-track span{color:#b88b43;font-variant-emoji:text}
+@media(max-width:600px){.publisher-monogram--image{width:98px;height:60px;margin-bottom:8px}.publisher-monogram--small{width:58px;height:48px}.publisher-monogram--wide{width:126px;height:60px}}
+@media(min-width:851px){.page-publisher-grid .publisher:last-child:nth-child(4n + 1){grid-column:1/-1;width:25%;justify-self:center;border-inline:1px solid var(--line)}}
+.publisher{display:grid;grid-template-rows:82px minmax(3em,auto) 1.2em;align-content:center;justify-items:center;row-gap:8px;padding:18px 12px}
+.publisher-monogram{align-self:center;margin:0}
+.publisher strong{align-self:center;line-height:1.35;text-wrap:balance}
+.publisher small{align-self:start;line-height:1.2}
+@media(max-width:600px){.publisher{min-height:175px;padding:14px 9px;grid-template-rows:64px minmax(3em,auto) 1.2em;row-gap:6px}}
+
+/* Publisher profile marks keep their original colors and proportions. */
+.publisher-profile-header{grid-template-columns:132px minmax(0,1fr);gap:26px;padding:34px 0 30px;direction:rtl}
+.publisher-profile-header .publisher-profile-logo{width:132px;height:116px;border-radius:0;background:transparent;box-shadow:none;font-size:60px;padding:0;overflow:visible}
+.publisher-profile-header .publisher-profile-logo img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain!important;object-position:center;mix-blend-mode:normal!important;border-radius:0!important}
+.publisher-profile-header .publisher-profile-logo img.publisher-profile-logo__image--small{width:78%;height:78%}
+.publisher-profile-header .publisher-profile-logo img.publisher-profile-logo__image--large{width:100%;height:100%}
+.publisher-profile-header .publisher-profile-logo img.publisher-profile-logo__image--wide{width:100%;height:72%}
+.publisher-profile-copy{min-width:0}
+.publisher-profile-copy .eyebrow{margin:0 0 4px}
+.publisher-profile-copy .profile-title{font-size:clamp(38px,5.4vw,66px);line-height:1.12;overflow-wrap:anywhere}
+.publisher-profile-copy>p:not(.eyebrow){max-width:620px;margin:8px 0 0;line-height:1.9}
+@media(max-width:600px){.publisher-profile-header{grid-template-columns:76px minmax(0,1fr);gap:13px;padding:26px 0 24px;align-items:center}.publisher-profile-header .publisher-profile-logo{width:76px;height:76px}.publisher-profile-copy .eyebrow{font-size:9px}.publisher-profile-copy .profile-title{font-size:clamp(28px,7.2vw,37px);line-height:1.22;letter-spacing:-.035em;margin:6px 0}.publisher-profile-copy>p:not(.eyebrow){font-size:11px;line-height:1.75;margin-top:5px}.publisher-profile-header .publisher-profile-logo img.publisher-profile-logo__image--small{width:72%;height:72%}.publisher-profile-header .publisher-profile-logo img.publisher-profile-logo__image--large{width:100%;height:100%}.publisher-profile-header .publisher-profile-logo img.publisher-profile-logo__image--wide{height:65%}}
+.publisher-monogram--slightly-small img{transform:scale(.84)}
+.publisher-monogram--slightly-large img{transform:scale(1.14)}
+.publisher-profile-header .publisher-profile-logo img.publisher-profile-logo__image--large{transform:scale(1.12)}
+.publisher--compact-logo{grid-template-rows:62px minmax(3em,auto) 1.2em;row-gap:12px}
+.publisher--compact-logo .publisher-monogram--image{margin-bottom:0;transform:scale(.78)}
+@media(max-width:600px){.publisher--compact-logo{grid-template-rows:52px minmax(3em,auto) 1.2em;row-gap:10px}.publisher--compact-logo .publisher-monogram--image{transform:scale(.76)}}
+.publisher-admin-logo{border-radius:0;background:transparent;box-shadow:none;overflow:hidden;padding:0}
+.publisher-admin-logo img{object-fit:contain!important;object-position:center;border-radius:0!important;background:transparent}
+/* Publisher marks stay in their grid cell on hover; opaque logo backgrounds
+   must never rotate across the publisher name. */
+.publisher:hover .publisher-monogram{rotate:0deg!important;transition:none!important}
+.publisher:hover .publisher-monogram--image{background:transparent!important;color:inherit!important}
+/* Publisher cards lift gently; logos stay inside their reserved row. */
+.publisher{position:relative;z-index:0;transition:transform .24s ease,box-shadow .24s ease,background-color .24s ease}
+.publisher:hover,.publisher:focus-visible{z-index:2;transform:translateY(-5px);box-shadow:0 12px 24px rgba(28,25,20,.12);background-color:#fffdf8}
+.publisher-monogram--image img{transition:transform .24s ease}
+.publisher:hover .publisher-monogram--image img,.publisher:focus-visible .publisher-monogram--image img{transform:scale(1.03)}
+.publisher-monogram--mashriq img{transform:scale(.94)}
+.publisher:hover .publisher-monogram--mashriq img,.publisher:focus-visible .publisher-monogram--mashriq img{transform:scale(.98)}
+.publisher-monogram--nafais img{transform:scale(.78)}
+.publisher:hover .publisher-monogram--nafais img,.publisher:focus-visible .publisher-monogram--nafais img{transform:scale(.81)}
+.publisher--compact-logo .publisher-monogram--image img{transform:scale(.76)}
+.publisher--compact-logo:hover .publisher-monogram--image img,.publisher--compact-logo:focus-visible .publisher-monogram--image img{transform:scale(.79)}
+.publisher-monogram--image:has(img[src*="jisoor"]) img{transform:scale(.78)}
+.publisher:hover .publisher-monogram--image:has(img[src*="jisoor"]) img,.publisher:focus-visible .publisher-monogram--image:has(img[src*="jisoor"]) img{transform:scale(.81)}
+.publisher--safha .publisher-monogram--image img{transform:scale(.62)}
+.publisher--safha:hover .publisher-monogram--image img,.publisher--safha:focus-visible .publisher-monogram--image img{transform:scale(.65)}
+.publisher-monogram--image:has(img[src*="dar-sutoor-2026"]) img{transform:scale(.76)}
+.publisher:hover .publisher-monogram--image:has(img[src*="dar-sutoor-2026"]) img,.publisher:focus-visible .publisher-monogram--image:has(img[src*="dar-sutoor-2026"]) img{transform:scale(.79)}
+.publisher-monogram--image:has(img[src*="takween-2026"]) img{transform:scale(.78)}
+.publisher:hover .publisher-monogram--image:has(img[src*="takween-2026"]) img,.publisher:focus-visible .publisher-monogram--image:has(img[src*="takween-2026"]) img{transform:scale(.81)}
+.publisher-monogram--image:has(img[src*="dar-al-karma-2026"]) img{transform:scale(.9)}
+.publisher:hover .publisher-monogram--image:has(img[src*="dar-al-karma-2026"]) img,.publisher:focus-visible .publisher-monogram--image:has(img[src*="dar-al-karma-2026"]) img{transform:scale(.93)}
+.publisher-monogram--image:has(img[src*="al-farabi-2026"]) img{transform:scale(.72)}
+.publisher:hover .publisher-monogram--image:has(img[src*="al-farabi-2026"]) img,.publisher:focus-visible .publisher-monogram--image:has(img[src*="al-farabi-2026"]) img{transform:scale(.75)}
+@media(prefers-reduced-motion:reduce){.publisher,.publisher-monogram--image img{transition:none}}

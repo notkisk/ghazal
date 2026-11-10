@@ -1,7 +1,35 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const CATALOG_CACHE_VERSION = '2026-11-clean-slate';
-const PUBLISHER_LOGO_ASSETS = { 'دار المدى':'assets/publishers/al-mada.png', 'منشورات الجمل':'assets/publishers/al-jamal.png', 'الشبكة العربية للأبحاث والنشر':'assets/publishers/arab-network.png', 'دار الرافدين':'assets/publishers/al-rafidain.png', 'صفحة 7':'assets/publishers/safha.png', 'الدار المصرية اللبنانية':'assets/publishers/aldar-almisriya-allubnaniya.png', 'المحروسة':'assets/publishers/al-mahrousa.png', 'دار الكتاب الجديد المتحدة':'assets/publishers/alkitab-aljadeed.png', 'الدار العربية للعلوم ناشرون':'assets/publishers/arab-scientific.png', 'دار سطور':'assets/publishers/dar-sutoor.webp', 'آفاق للنشر والتوزيع':'assets/publishers/afaq-books.png', 'افاق للنشر والتوزيع':'assets/publishers/afaq-books.png', 'آفاق للنشر و التوزيع':'assets/publishers/afaq-books.png', 'افاق للنشر و التوزيع':'assets/publishers/afaq-books.png' };
+const PUBLISHER_LOGO_ASSETS = { 'دار المدى':'assets/publishers/al-mada.png', 'منشورات الجمل':'assets/publishers/al-jamal.png', 'الشبكة العربية للأبحاث والنشر':'assets/publishers/arab-network.png', 'دار الرافدين':'assets/publishers/al-rafidain.png', 'صفحة 7':'assets/publishers/safha.png', 'الدار المصرية اللبنانية':'assets/publishers/aldar-almisriya-allubnaniya.png', 'المحروسة':'assets/publishers/al-mahrousa.png', 'دار الكتاب الجديد المتحدة':'assets/publishers/alkitab-aljadeed-2026.png', 'الدار العربية للعلوم ناشرون':'assets/publishers/arab-scientific.png', 'دار سطور':'assets/publishers/dar-sutoor-2026.png', 'آفاق للنشر والتوزيع':'assets/publishers/afaq-books.png', 'افاق للنشر والتوزيع':'assets/publishers/afaq-books.png', 'آفاق للنشر و التوزيع':'assets/publishers/afaq-books.png', 'افاق للنشر و التوزيع':'assets/publishers/afaq-books.png', 'جسور للترجمة و النشر':'assets/publishers/jisoor.png', 'دار المدار الإسلامي':'assets/publishers/al-madar-al-islami.png', 'دار المشرق':'assets/publishers/dar-al-mashriq-2026.png', 'تمكين للأبحاث و النشر':'assets/publishers/tamkeen-research.png', 'ديوان للنشر':'assets/publishers/diwan.png', 'مركز نهوض للدراسات والبحوث':'assets/publishers/nahda-center.png', 'الدار الأهلية':'assets/publishers/dar-al-ahliyya.png', 'دار الأهلية':'assets/publishers/dar-al-ahliyya.png', 'الدار الأهلية للنشر والتوزيع':'assets/publishers/dar-al-ahliyya.png', 'منشورات تكوين':'assets/publishers/takween-2026.png', 'دار الكرمة':'assets/publishers/dar-al-karma-2026.png', 'الكرمة للنشر والتوزيع':'assets/publishers/dar-al-karma-2026.png', 'دار الآداب':'assets/publishers/dar-al-adab.png', 'دار الاداب':'assets/publishers/dar-al-adab.png', 'دار الآداب للنشر والتوزيع':'assets/publishers/dar-al-adab.png', 'دار التنوير':'assets/publishers/dar-al-tanweer.png', 'دار التنوير للطباعة والنشر والتوزيع':'assets/publishers/dar-al-tanweer.png', 'دار النفائس':'assets/publishers/dar-al-nafais.png', 'دار النفائس للنشر والتوزيع':'assets/publishers/dar-al-nafais.png', 'دار العين':'assets/publishers/dar-al-ain.png', 'دار العين للنشر':'assets/publishers/dar-al-ain.png', 'دار العين للنشر والتوزيع':'assets/publishers/dar-al-ain.png' };
+PUBLISHER_LOGO_ASSETS['دار الفارابي'] = 'assets/publishers/al-farabi-2026.png';
+PUBLISHER_LOGO_ASSETS['دار الفارابي للنشر والتوزيع'] = PUBLISHER_LOGO_ASSETS['دار الفارابي'];
+const PUBLISHER_DESCRIPTIONS = {
+  'آفاق للنشر والتوزيع':'دار نشر مصرية تهتم بالفكر والفلسفة والعلوم، وتنشر الأدب العربي والأعمال المترجمة.',
+  'الدار العربية للعلوم ناشرون':'دار بيروتية تنشر كتباً عربية ومترجمة في الأدب والمعرفة والعلوم ومجالات الحياة.',
+  'الدار المصرية اللبنانية':'دار نشر مصرية تقدم الرواية والأدب العربي والعالمي إلى جانب الكتب الفكرية والمعرفية.',
+  'الشبكة العربية للأبحاث والنشر':'دار نشر تُعنى بالفكر والفلسفة والتاريخ والأدب والعلوم الإنسانية، وبالكتب البحثية والترجمات.',
+  'المحروسة':'دار نشر ومركز أبحاث مصري، يصدر كتباً في الأدب والفكر والعلوم الاجتماعية والسياسة والترجمة.',
+  'تمكين للأبحاث و النشر':'مركز بحثي يعنى بالدراسات والبحوث الأكاديمية والفكرية وإتاحتها للقارئ العربي.',
+  'تمكين للطباعة و النشر':'دار تقدم خدمات الطباعة والنشر وإنتاج الكتب.',
+  'جسور للترجمة و النشر':'دار نشر مصرية مستقلة تهتم بترجمة الأدب العالمي، إلى جانب الرواية والفلسفة والتاريخ والفنون.',
+  'دار الآداب':'دار نشر لبنانية عريقة تقدم الأدب العربي والعالمي، والرواية والشعر والفكر.',
+  'دار الأهلية':'دار نشر أردنية تقدم كتباً أدبية وفكرية ومراجع أكاديمية.',
+  'دار التنوير':'دار نشر عربية مستقلة تنشر الأدب والفلسفة والفكر، وتعرّف القارئ العربي بأعمال مترجمة.',
+  'دار العين للنشر':'دار نشر مصرية تأسست عام 2000، تهتم بالأدب والعلوم الثقافية وتدعم الأصوات الجديدة.',
+  'دار الكتاب الجديد المتحدة':'دار نشر لبنانية تقدم عناوين عربية في الأدب والفكر والعلوم الإنسانية.',
+  'دار الكرمة':'دار نشر عربية تأسست في القاهرة عام 2013، تصدر كتباً عربية ومترجمة في الأدب والفكر والمعرفة.',
+  'دار المدار الإسلامي':'دار نشر تهتم بالتراث والفكر الإسلامي والكتب الثقافية.',
+  'دار المدى':'تنشر المدى كتباً عراقية وعربية ومترجمة، من الأعمال الأدبية والكلاسيكية إلى الفكر والتاريخ والمعرفة.',
+  'دار المشرق':'دار نشر لبنانية عريقة تصدر كتباً في الأدب والإنسانيات والفلسفة والروحانيات والتعليم.',
+  'دار النفائس':'دار نشر لبنانية تأسست عام 1970، وتصدر كتباً في التراث والتاريخ والأدب والمعرفة.',
+  'دار سطور':'دار نشر عراقية تهتم بالأدب والفكر والثقافة وتعتني بإنتاج الكتاب وإخراجه.',
+  'ديوان للنشر':'دار نشر مصرية تحتفي بالحكايات والكتب العربية، وتعيد تقديم أعمال لكتّاب مثل طه حسين ونجيب محفوظ.',
+  'صفحة 7':'دار نشر سعودية متخصصة في ترجمة عناوين الفلسفة والفكر والأدب.',
+  'مركز نهوض للدراسات والبحوث':'مركز بحثي يعالج قضايا الفكر والواقع، ويقدم دراسات تاريخية وسياسية واجتماعية ودينية.',
+  'منشورات الجمل':'دار نشر عراقية ألمانية معروفة بترجمة ونشر الأدب والفلسفة والفكر.',
+  'منشورات تكوين':'دار نشر عربية تقدم عناوين في الأدب والفكر والثقافة.'
+};
 const newestFirst = (a, b) => String(b.created_at || b.createdAt || '').localeCompare(String(a.created_at || a.createdAt || '')) || String(b.id).localeCompare(String(a.id));
 // Clear catalog caches from earlier demo/import versions once per browser. The
 // cart and favorites are left intact; they already drop ids missing from the new
@@ -157,12 +185,32 @@ function renderDepartmentLinks() {
   links.push(`<a href="#bestsellers"><span class="dep-num">${String(entries.length + 1).padStart(2, '0')}</span><span>الأكثر قراءة<small>كتب أحبّها القراء</small></span><b>↖</b></a>`);
   target.innerHTML = links.join('');
 }
+function publisherLogoPath(publisher) {
+  const name = String(publisher?.name || '').trim();
+  if (name === 'دار المشرق' || name === 'صفحة 7' || name === 'دار سطور' || name === 'منشورات تكوين' || name === 'دار الكرمة' || name === 'الكرمة للنشر والتوزيع' || name === 'دار الفارابي' || name === 'دار الفارابي للنشر والتوزيع') return PUBLISHER_LOGO_ASSETS[name] || '';
+  return (publisher?.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? publisher.logo : '') || PUBLISHER_LOGO_ASSETS[name] || '';
+}
+function publisherDescription(publisher) {
+  const description = String(publisher?.description || '').trim();
+  return description && description !== 'إصدارات من هذا الناشر.' ? description : (PUBLISHER_DESCRIPTIONS[publisher?.name] || 'دار نشر تقدم عناوين عربية في الأدب والثقافة والمعرفة.');
+}
+function publisherMark(publisher) {
+  const path = publisherLogoPath(publisher);
+  if (path) return `<span class="publisher-monogram publisher-monogram--image${path.includes('al-madar-al-islami') ? ' publisher-monogram--circle publisher-monogram--small' : ''}${path.includes('tamkeen-research') || path.includes('dar-al-ahliyya') || path.includes('dar-al-tanweer') || path.includes('dar-sutoor') ? ' publisher-monogram--color' : ''}${path.includes('dar-al-mashriq') ? ' publisher-monogram--mashriq' : ''}${path.includes('arab-scientific') || path.includes('dar-sutoor') || path.includes('diwan') ? ' publisher-monogram--wide' : ''}${path.includes('dar-al-ain') || path.includes('nahda-center') || path.includes('takween') ? ' publisher-monogram--slightly-large' : ''}${path.includes('arab-network') ? ' publisher-monogram--small' : ''}${path.includes('safha') || path.includes('alkitab-aljadeed') || path.includes('afaq-books') || path.includes('dar-al-adab') || path.includes('al-mada.png') || path.includes('jisoor') || path.includes('dar-al-karma') || path.includes('al-jamal') ? ' publisher-monogram--slightly-small' : ''}${path.includes('dar-al-nafais') ? ' publisher-monogram--nafais' : ''}"><img src="${escapeHtml(path)}" alt="" loading="lazy" decoding="async" /></span>`;
+  const mark = publisher?.logo && !/^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? publisher.logo : publisher?.name?.slice(0, 1) || '';
+  return `<span class="publisher-monogram">${escapeHtml(mark)}</span>`;
+}
+function publisherCardClass(publisher) {
+  const name = String(publisher?.name || '').trim();
+  if (name === 'صفحة 7') return ' publisher--compact-logo publisher--safha';
+  return ['آفاق للنشر والتوزيع','افاق للنشر والتوزيع','آفاق للنشر و التوزيع','افاق للنشر و التوزيع','دار الكتاب الجديد المتحدة'].includes(name) ? ' publisher--compact-logo' : '';
+}
 function renderPublisherGrid() {
   const section = document.getElementById('publishers'); const target = document.getElementById('home-publisher-grid');
   if (!section || !target) return;
   const list = publishers.filter(publisher => publisher && publisher.name).slice(0, 8);
   section.hidden = !list.length;
-  target.innerHTML = list.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${escapeHtml(publisher.logo && !/^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? publisher.logo : publisher.name.slice(0, 1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('');
+  target.innerHTML = list.map(publisher => `<a class="publisher${publisherCardClass(publisher)}" href="#publisher/${encodeURIComponent(publisher.name)}">${publisherMark(publisher)}<strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('');
 }
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) window.GhazalAPI.catalog().then(applyCatalogPayload).catch(() => {});
 if (window.location.protocol !== 'file:' && window.GhazalAPI?.catalog) {
@@ -844,9 +892,11 @@ function renderPublisherPage(name) {
   const publisher = publisherByName(name);
   if (!publisher) { if (catalogLoaded) location.hash = '#publishers'; return; }
   publisherQuery = ''; publisherFilter = 'all'; publisherGenre = 'all';
+  const logoPath = publisherLogoPath(publisher);
+  const logoSize = logoPath.includes('al-mada.png') || logoPath.includes('jisoor') || logoPath.includes('dar-al-karma') || logoPath.includes('arab-network') || logoPath.includes('al-jamal') ? 'publisher-profile-logo__image--small' : logoPath.includes('dar-al-adab') || logoPath.includes('dar-al-ain') || logoPath.includes('nahda-center') || logoPath.includes('takween') ? 'publisher-profile-logo__image--large' : logoPath.includes('arab-scientific') || logoPath.includes('dar-sutoor') || logoPath.includes('diwan') ? 'publisher-profile-logo__image--wide' : '';
   const logo = escapeHtml(publisher.logo && !/^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? publisher.logo : publisher.name.slice(0, 1));
   const publisherFilters = [...catalogBookGenres, ...publisherBooks(publisher.name).map(book => book.genre).filter(Boolean)].filter((genre, index, list) => list.indexOf(genre) === index).sort((a,b) => a.localeCompare(b, 'ar')).map(genre => ({ value:`genre:${genre}`, label:genre }));
-  $('#publisher-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى الفهرس</a><div class="profile-header"><div class="profile-logo" aria-hidden="true">${logo}</div><div><p class="eyebrow">دار نشر / ملف الناشر</p><h1 class="profile-title" id="publisher-page-title">${escapeHtml(publisher.name)}</h1><p>${escapeHtml(publisher.description)}</p><small>${escapeHtml(publisher.city)} · ${escapeHtml(publisher.since)}</small></div></div><div class="profile-books"><div class="card-heading"><h2>كتب <em>الدار</em></h2><span id="publisher-count" class="catalog-summary"></span></div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="publisher-search" type="search" placeholder="ابحث داخل إصدارات الدار" /></label><select id="publisher-sort" aria-label="ترتيب إصدارات الدار"><option value="featured">الأحدث</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option></select></div><label class="publisher-genre-filter">التصنيف أو النوع<select id="publisher-genre-filter"><option value="all">كل الإصدارات</option>${publisherFilters.map(filter => `<option value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)}</option>`).join('')}</select></label><div class="catalog-grid" id="publisher-books"></div></div>`;
+  $('#publisher-page-content').innerHTML = `<a class="detail-back" href="#catalog">← العودة إلى الفهرس</a><div class="profile-header publisher-profile-header"><div class="profile-logo publisher-profile-logo${logoPath ? ' publisher-profile-logo--image' : ''}" aria-hidden="true">${logoPath ? `<img class="${logoSize}" src="${escapeHtml(logoPath)}" alt="" loading="lazy" decoding="async" />` : logo}</div><div class="publisher-profile-copy"><p class="eyebrow">دار نشر / ملف الناشر</p><h1 class="profile-title" id="publisher-page-title">${escapeHtml(publisher.name)}</h1><p>${escapeHtml(publisherDescription(publisher))}</p></div></div><div class="profile-books"><div class="card-heading"><h2>كتب <em>الدار</em></h2><span id="publisher-count" class="catalog-summary"></span></div><div class="catalog-toolbar"><label class="catalog-search"><span>⌕</span><input id="publisher-search" type="search" placeholder="ابحث داخل إصدارات الدار" /></label><select id="publisher-sort" aria-label="ترتيب إصدارات الدار"><option value="featured">الأحدث</option><option value="title">العنوان: أ ـ ي</option><option value="price-low">السعر: الأقل أولًا</option></select></div><label class="publisher-genre-filter">التصنيف أو النوع<select id="publisher-genre-filter"><option value="all">كل الإصدارات</option>${publisherFilters.map(filter => `<option value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)}</option>`).join('')}</select></label><div class="catalog-grid" id="publisher-books"></div></div>`;
   const update = () => { const [filterType, filterValue] = publisherGenre.split(':'); let list = publisherBooks(publisher.name).filter(book => (publisherGenre === 'all' || (filterType === 'category' ? book.category === filterValue : genreMatches(book, filterValue))) && (!publisherQuery || normalize(`${book.title} ${book.author} ${book.genre}`).includes(normalize(publisherQuery)))); const sort = $('#publisher-sort').value; if (sort === 'title') list.sort((a,b) => a.title.localeCompare(b.title, 'ar')); if (sort === 'price-low') list.sort((a,b) => a.price - b.price); $('#publisher-count').textContent = `${list.length} إصدارات`; renderProfileBooks(list, $('#publisher-books')); $('#publisher-genre-filter').value = publisherGenre; };
   $('#publisher-search').addEventListener('input', event => { publisherQuery = event.target.value; update(); }); $('#publisher-sort').addEventListener('change', update); $('#publisher-genre-filter').addEventListener('change', event => { publisherGenre = event.target.value; update(); }); update();
 }
@@ -926,7 +976,7 @@ function renderDepartmentsPage() {
   observeReveals();
 }
 function renderPublishersPage() {
-  $('#publishers-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / شركاء الكتاب</p><h1 id="publishers-page-title">دور <em>النشر</em></h1><p>اكتشف مشاريع الناشرين والكتب المتاحة من كل دار.</p></div></div><div class="publisher-grid page-publisher-grid">${publishers.map(publisher => `<a class="publisher" href="#publisher/${encodeURIComponent(publisher.name)}"><span class="publisher-monogram">${escapeHtml(publisher.logo && !/^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? publisher.logo : publisher.name.slice(0,1))}</span><strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('')}</div>`;
+  $('#publishers-page-content').innerHTML = `<div class="page-hero"><div><p class="eyebrow">الغزال / شركاء الكتاب</p><h1 id="publishers-page-title">دور <em>النشر</em></h1><p>اكتشف مشاريع الناشرين والكتب المتاحة من كل دار.</p></div></div><div class="publisher-grid page-publisher-grid">${publishers.map(publisher => `<a class="publisher${publisherCardClass(publisher)}" href="#publisher/${encodeURIComponent(publisher.name)}">${publisherMark(publisher)}<strong>${escapeHtml(publisher.name)}</strong><small>${escapeHtml(publisher.since || publisher.city || '')}</small></a>`).join('')}</div>`;
   observeReveals();
 }
 function renderJournalPage() {

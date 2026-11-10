@@ -131,12 +131,21 @@ test('homepage best sellers use confirmed orders and a stable carousel fallback'
 test('cache-busting versions match the latest edited assets', () => {
   const index = read('index.html');
   const adminHtml = read('admin.html');
-  assert.match(index, /script\.js\?v=20261106-1/);
-  assert.match(index, /enhancements\.css\?v=20261106-1/);
-  assert.match(index, /api\.js\?v=20261105-3/);
-  assert.match(adminHtml, /admin\.js\?v=20261105-9/);
-  assert.match(adminHtml, /api\.js\?v=20261105-3/);
-  assert.match(adminHtml, /dashboard\.css\?v=20261105-11/);
+  assert.match(index, /script\.js\?v=20261110-6/);
+  assert.match(index, /enhancements\.css\?v=20261110-7/);
+  assert.match(index, /api\.js\?v=20261110-3/);
+  assert.match(adminHtml, /admin-import-utils\.js\?v=20261110-1/);
+  assert.match(adminHtml, /admin\.js\?v=20261110-6/);
+  assert.match(adminHtml, /admin-inventory-export\.js\?v=20261110-3/);
+  assert.match(adminHtml, /admin-sales-export\.js\?v=20261110-1/);
+  assert.match(read('admin.js'), /data-receive-book-stock/);
+  assert.match(read('admin.js'), /data-export-book-inventory/);
+  assert.match(read('admin.js'), /data-export-inventory-covers/);
+  assert.match(adminHtml, /enhancements\.css\?v=20261110-7/);
+  assert.match(adminHtml, /api\.js\?v=20261110-3/);
+  assert.match(adminHtml, /dashboard\.css\?v=20261107-4/);
+  assert.match(adminHtml, /data-export-sales/);
+  assert.match(read('server.js'), /\/api\/admin\/sales-report/);
 });
 
 test('backup script never mutates the database at require time', () => {
@@ -149,5 +158,7 @@ test('production discovery files and import template are present', () => {
   assert.match(read('robots.txt'), /Sitemap:/);
   assert.match(read('sitemap.xml'), /<urlset/);
   assert.ok(fs.existsSync(path.join(root, 'assets/templates/ghazal-book-import-template.xlsx')));
+  assert.ok(fs.existsSync(path.join(root, 'assets/publishers/al-farabi-2026.png')));
+  assert.match(read('script.js'), /PUBLISHER_LOGO_ASSETS\['دار الفارابي'\]/);
   assert.match(read('index.html'), /canonical/);
 });

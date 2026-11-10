@@ -17,7 +17,7 @@ body[data-role="admin"] [data-owner-finance],body[data-role="admin"] .dashboard-
 .owner-app .owner-header h1{font-size:34px;line-height:1;margin:2px 0}
 .owner-app .owner-header p{line-height:1.2}
 .owner-app>.stat-grid{gap:8px;margin-bottom:10px}
-.stats-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 7px;color:var(--muted);font-size:10px}.stats-toolbar strong{color:var(--ink);font-size:11px;margin-inline-end:auto}.stats-toolbar select,.stats-toolbar input{border:1px solid #d5c4aa;background:#f7f0e3;color:var(--ink);padding:6px 8px;font:10px var(--sans)}.stats-toolbar label{display:flex;align-items:center;gap:4px}.owner-app>.stat-grid{grid-template-columns:repeat(6,minmax(0,1fr))}
+.stats-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 7px;color:var(--muted);font-size:10px}.stats-toolbar strong{color:var(--ink);font-size:11px;margin-inline-end:auto}.stats-toolbar select,.stats-toolbar input{border:1px solid #d5c4aa;background:#f7f0e3;color:var(--ink);padding:6px 8px;font:10px var(--sans)}.stats-toolbar label{display:flex;align-items:center;gap:4px}.stats-toolbar [data-export-sales]{min-height:30px;padding:6px 10px;font-size:10px}.stats-toolbar [data-export-sales][hidden]{display:none!important}.owner-app>.stat-grid{grid-template-columns:repeat(6,minmax(0,1fr))}
 .stats-toolbar .custom-select{width:130px}.stats-toolbar .custom-select-trigger{min-height:30px;padding:6px 8px;font-size:10px}.stats-toolbar .custom-select-menu{font-size:10px}
 .owner-app>.stat-grid article{min-height:64px;padding:8px 12px}
 .owner-app>.stat-grid strong{font-size:21px;margin:5px 0 0}
