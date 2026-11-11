@@ -49,19 +49,20 @@ async function ownerToken(base) {
 
 test.after(() => fs.rmSync(dataDir, { recursive:true, force:true }));
 
-test('catalog is seeded and orders reserve stock transactionally', () => {
+test('catalog is seeded and pending orders defer stock settlement', () => {
   assert.equal(db.prepare('SELECT COUNT(*) n FROM books').get().n, 12);
   assert.deepEqual(catalogPayload().bookGenres, [...new Set(fixtureBooks.map(book => book[5]))].sort((a, b) => a.localeCompare(b, 'ar')));
   const reference = createOrder({ customer:{customer:'اختبار الغزال',phone:'0555555555'}, items:[{id:'stranger',qty:2}], shipping:{type:'home',wilayaCode:16,wilaya:'Alger',commune:'Alger Centre',price:600} });
   assert.match(reference, /^GZ-/);
   const book = db.prepare('SELECT stock,reserved,stock-reserved available FROM books WHERE id=?').get('stranger');
-  assert.equal(book.available, 8);
+  assert.deepEqual({ stock:book.stock, reserved:book.reserved, available:book.available }, { stock:10, reserved:0, available:10 });
   assert.equal(db.prepare('SELECT status FROM orders WHERE reference=?').get(reference).status, 'new');
 });
 
-test('insufficient stock is rejected without a partial reservation', () => {
-  assert.throws(() => createOrder({ customer:{customer:'اختبار الغزال',phone:'0555555555'}, items:[{id:'stranger',qty:99}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} }), /insufficient_stock/);
-  assert.equal(db.prepare('SELECT reserved FROM books WHERE id=?').get('stranger').reserved, 2);
+test('pending orders can exceed current stock and do not reserve it', () => {
+  const reference=createOrder({ customer:{customer:'اختبار الغزال',phone:'0555555555'}, items:[{id:'stranger',qty:99}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} });
+  assert.equal(db.prepare('SELECT qty FROM order_items WHERE order_id=(SELECT id FROM orders WHERE reference=?)').get(reference).qty,99);
+  assert.equal(db.prepare('SELECT reserved FROM books WHERE id=?').get('stranger').reserved,0);
 });
 
 test('checkout rejects a commune that is not in the selected wilaya', () => {
@@ -77,6 +78,7 @@ test('checkout accepts the canonical commune id from the selector', () => {
 test('admin order edits persist added books and custom unit prices in totals', async () => {
   const reference=createOrder({ customer:{customer:'تعديل الطلب',phone:'0555555555'},items:[{id:'stranger',qty:1}],shipping:{type:'home',wilayaCode:16,commune:'Alger Centre'} });
   const base=await listen(), token=await ownerToken(base), commune=require('../data/algeria-communes-58-wilayas.json').find(item=>item.wilaya_code==='16');
+  try {
   const response=await fetch(`${base}/api/admin/orders/${encodeURIComponent(reference)}`,{method:'PUT',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({customer:{customer:'تعديل الطلب',phone:'0555555555',address:'',wilayaCode:16,wilaya:'Alger',communeId:commune.id},items:[{id:'stranger',qty:1,unit_price:2450},{id:'world-yesterday',qty:2,unit_price:1700}]})});
   assert.equal(response.status,200);
   const {order}=await response.json();
@@ -91,7 +93,10 @@ test('admin order edits persist added books and custom unit prices in totals', a
   assert.equal(cleared.discount,0);
   assert.equal(cleared.coupon_code,'');
   assert.equal(cleared.total,6450);
-  await closeServer();
+  } finally {
+    db.prepare('DELETE FROM orders WHERE reference=?').run(reference);
+    await closeServer();
+  }
 });
 
 test('checkout accepts an order without a delivery address and derives one for Ecotrack', () => {
@@ -108,9 +113,13 @@ test('checkout ignores client shipping prices and applies database discounts', (
   assert.deepEqual({ ...order }, { subtotal:3200, discount:320, delivery:600, total:3480 });
 });
 
-test('stock reservations reject a competing order after available stock is consumed', () => {
-  createOrder({ customer:{customer:'اختبار التزامن 1',phone:'0555555555'}, items:[{id:'art-of-loving',qty:8}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',price:0} });
-  assert.throws(() => createOrder({ customer:{customer:'اختبار التزامن 2',phone:'0555555555'}, items:[{id:'art-of-loving',qty:3}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',price:9999} }), /insufficient_stock/);
+test('competing pending orders settle against available stock when confirmed', () => {
+  const first=createOrder({ customer:{customer:'اختبار التزامن 1',phone:'0555555555'}, items:[{id:'art-of-loving',qty:8}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',price:0} });
+  const second=createOrder({ customer:{customer:'اختبار التزامن 2',phone:'0555555555'}, items:[{id:'art-of-loving',qty:3}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',price:9999} });
+  transitionOrder(first,'confirmed','',{id:1});
+  transitionOrder(second,'confirmed','',{id:1});
+  assert.equal(db.prepare('SELECT stock FROM books WHERE id=?').get('art-of-loving').stock,0);
+  assert.equal(db.prepare("SELECT qty FROM order_items WHERE order_id=(SELECT id FROM orders WHERE reference=?) AND book_id='art-of-loving'").get(second).qty,2);
 });
 
 test('newsletter subscriptions are normalized and idempotent in SQLite', () => {
@@ -159,7 +168,7 @@ test('password hashes are salted and do not contain the plaintext', () => {
 test('confirmation settles reservations and returns restore physical stock once', () => {
   const reference = createOrder({ customer:{customer:'اختبار المخزون',phone:'0666666666'}, items:[{id:'meaning',qty:3},{id:'meaning',qty:2}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} });
   assert.equal(db.prepare('SELECT stock FROM books WHERE id=?').get('meaning').stock, 10);
-  assert.equal(db.prepare('SELECT reserved FROM books WHERE id=?').get('meaning').reserved, 5);
+  assert.equal(db.prepare('SELECT reserved FROM books WHERE id=?').get('meaning').reserved, 0);
   transitionOrder(reference, 'confirmed', 'تم التأكيد', { id: 1 });
   assert.equal(db.prepare('SELECT stock FROM books WHERE id=?').get('meaning').stock, 5);
   assert.equal(db.prepare('SELECT reserved FROM books WHERE id=?').get('meaning').reserved, 0);
@@ -212,6 +221,7 @@ test('catalog sync stores the optional page count without requiring it', async (
     assert.equal(saved.find(book => book.id === 'pages-test').pages, 312);
     assert.equal(saved.find(book => book.id === 'no-pages-test').pages, null);
   } finally {
+    db.prepare('DELETE FROM restocks WHERE book_id IN (?,?)').run('pages-test','no-pages-test');
     db.prepare('DELETE FROM books WHERE id IN (?,?)').run('pages-test', 'no-pages-test');
     await new Promise(resolve => server.close(resolve));
   }
@@ -260,16 +270,16 @@ test('sales report returns a date-bounded order sheet and item details with ship
   const id = `sales-report-book-${Date.now()}`;
   const stamp = new Date().toISOString();
   db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,image,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(id,'كتاب تقرير المبيعات','كاتب التقرير','دار الاختبار','literature','رواية',1300,20,'','',stamp,stamp);
-  const todayParts = new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Algiers',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(stamp));
-  const today = `${todayParts.find(part=>part.type==='year').value}-${todayParts.find(part=>part.type==='month').value}-${todayParts.find(part=>part.type==='day').value}`;
-  const yesterdayDate = new Date(`${today}T00:00:00.000Z`); yesterdayDate.setUTCDate(yesterdayDate.getUTCDate()-1);
-  const yesterday = yesterdayDate.toISOString().slice(0,10);
+  const today = '2001-02-03';
+  const yesterday = '2001-02-02';
   const references = [];
   try {
     const makeOrder = name => createOrder({ customer:{customer:name,phone:'0555555555'}, items:[{id,qty:2}], shipping:{type:'office',wilayaCode:16,commune:'Alger Centre',price:0} });
     const included = makeOrder('طلب ضمن الفترة'); references.push(included);
     const cancelled = makeOrder('طلب ملغى'); references.push(cancelled); transitionOrder(cancelled,'cancelled','',null);
     const outside = makeOrder('طلب خارج الفترة'); references.push(outside);
+    db.prepare('UPDATE orders SET created_at=? WHERE reference=?').run(`${today}T12:00:00.000Z`,included);
+    db.prepare('UPDATE orders SET created_at=? WHERE reference=?').run(`${today}T12:00:00.000Z`,cancelled);
     db.prepare('UPDATE orders SET created_at=? WHERE reference=?').run(`${yesterday}T12:00:00.000Z`,outside);
 
     const response = await fetch(`${base}/api/admin/sales-report?from=${today}&to=${today}&scope=all`,{headers:{authorization:`Bearer ${token}`}});
@@ -329,6 +339,7 @@ test('catalog payload is cached, revalidated with an ETag, and invalidated by da
     assert.notEqual(fresh.headers.get('etag'), etag);
     assert.ok((await fresh.json()).books.some(book => book.id === id));
   } finally {
+    db.prepare('DELETE FROM restocks WHERE book_id=?').run(id);
     db.prepare('DELETE FROM books WHERE id=?').run(id);
     await closeServer();
   }
@@ -358,6 +369,7 @@ test('request bodies split inside a multi-byte character keep the Arabic text in
     assert.equal(response.status, 200);
     assert.equal(catalogPayload().books.find(book => book.id === id).note, note);
   } finally {
+    db.prepare('DELETE FROM restocks WHERE book_id=?').run(id);
     db.prepare('DELETE FROM books WHERE id=?').run(id);
     await closeServer();
   }
@@ -562,6 +574,7 @@ test('catalog sync stores cover paths without embedded image data', async () => 
     assert.equal(kept.thumb, stored.image);
     assert.equal(kept.display, stored.image);
   } finally {
+    db.prepare('DELETE FROM restocks WHERE book_id=?').run(id);
     db.prepare('DELETE FROM books WHERE id=?').run(id);
     await closeServer();
   }
@@ -580,6 +593,7 @@ test('catalog sync derives publishers, authors, categories, and subcategories fr
     assert.equal(payload.genres['تصنيف جديد'].title, 'تصنيف جديد');
     assert.ok(payload.bookGenres.includes('نوع جديد'));
   } finally {
+    db.prepare('DELETE FROM restocks WHERE book_id=?').run('derived-test');
     db.prepare('DELETE FROM books WHERE id=?').run('derived-test');
     await closeServer();
   }
