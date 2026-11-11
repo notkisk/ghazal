@@ -38,6 +38,8 @@ const reservationColumns = db.prepare('PRAGMA table_info(reservations)').all().m
 if (!reservationColumns.includes('settled_at')) db.exec('ALTER TABLE reservations ADD COLUMN settled_at TEXT');
 const orderColumns = db.prepare('PRAGMA table_info(orders)').all().map(column => column.name);
 if (!orderColumns.includes('discount')) db.exec('ALTER TABLE orders ADD COLUMN discount INTEGER NOT NULL DEFAULT 0');
+if (!orderColumns.includes('coupon_code')) db.exec("ALTER TABLE orders ADD COLUMN coupon_code TEXT NOT NULL DEFAULT ''");
+if (!orderColumns.includes('total_adjustment')) db.exec('ALTER TABLE orders ADD COLUMN total_adjustment INTEGER NOT NULL DEFAULT 0');
 // Pending orders no longer reserve inventory. Release legacy reservations from
 // orders that have not been confirmed so old carts cannot hide stock.
 db.exec("UPDATE books SET reserved=MAX(0,reserved-(SELECT COALESCE(SUM(r.qty),0) FROM reservations r JOIN orders o ON o.id=r.order_id WHERE r.book_id=books.id AND r.settled_at IS NULL AND r.released_at IS NULL AND o.status IN ('new','cancelled'))) WHERE reserved>0");
@@ -607,7 +609,7 @@ function createOrder(body) {
     const reference = `GZ-${stamp.slice(0,10).replaceAll('-','')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
     const delivery = deliveryRates[Number(body.shipping.wilayaCode)][body.shipping.type];
     const customerShipping = { ...body.shipping, price: delivery };
-    const result = db.prepare('INSERT INTO orders (reference,customer_json,subtotal,discount,delivery,total,payment,shipment_type,status,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(reference, json({ ...body.customer, ...customerShipping }), subtotal, discount, delivery, Math.max(0, subtotal - discount) + delivery, 'cash_on_delivery', body.shipping.type, 'new', String(body.notes || ''), stamp, stamp);
+    const result = db.prepare('INSERT INTO orders (reference,customer_json,subtotal,discount,coupon_code,delivery,total,payment,shipment_type,status,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').run(reference, json({ ...body.customer, ...customerShipping }), subtotal, discount, discountCode.toUpperCase(), delivery, Math.max(0, subtotal - discount) + delivery, 'cash_on_delivery', body.shipping.type, 'new', String(body.notes || ''), stamp, stamp);
     for (const item of items) db.prepare('INSERT INTO order_items VALUES (?,?,?,?,?)').run(result.lastInsertRowid, item.book.id, item.book.title, item.qty, item.book.price);
     db.prepare('INSERT INTO order_events (order_id,status,created_at) VALUES (?,?,?)').run(result.lastInsertRowid, 'new', stamp); db.exec('COMMIT'); return reference;
   } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -635,7 +637,7 @@ function transitionOrder(reference, status, notes, user) {
       const finalItems = db.prepare('SELECT qty,unit_price FROM order_items WHERE order_id=?').all(order.id);
       const finalSubtotal = finalItems.reduce((sum, item) => sum + Number(item.qty) * Number(item.unit_price), 0);
       const finalDiscount = Math.min(Number(order.discount || 0), finalSubtotal);
-      db.prepare('UPDATE orders SET subtotal=?,discount=?,total=? WHERE id=?').run(finalSubtotal, finalDiscount, Math.max(0, finalSubtotal - finalDiscount) + Number(order.delivery), order.id);
+      db.prepare('UPDATE orders SET subtotal=?,discount=?,total=? WHERE id=?').run(finalSubtotal, finalDiscount, Math.max(0, finalSubtotal - finalDiscount + Number(order.delivery) + Number(order.total_adjustment || 0)), order.id);
     }
     if (status === 'cancelled' && order.status !== 'cancelled') for (const item of reservations.filter(row => !row.settled_at && !row.released_at)) { db.prepare('UPDATE books SET reserved=MAX(0,reserved-?),updated_at=? WHERE id=?').run(item.qty,stamp,item.book_id); db.prepare('UPDATE reservations SET released_at=? WHERE order_id=? AND book_id=?').run(stamp,order.id,item.book_id); }
     if (status === 'returned' && order.status !== 'returned' && ['shipped','delivered'].includes(order.status)) for (const item of reservations.filter(row => row.settled_at)) { db.prepare('UPDATE books SET stock=stock+?,updated_at=? WHERE id=?').run(item.qty,stamp,item.book_id); db.prepare('INSERT INTO restocks (book_id,quantity,reason,user_id,created_at) VALUES (?,?,?,?,?)').run(item.book_id,item.qty,'customer_return',user?.id || null,stamp); }
@@ -776,6 +778,26 @@ async function api(req, res, url) {
     if (req.method === 'DELETE' && url.pathname.startsWith('/api/admin/books/')) { if (user.role !== 'owner') return send(res,403,{error:'owner_only'}); const bookId = decodeURIComponent(url.pathname.split('/').pop()); const book = db.prepare('SELECT id,title FROM books WHERE id=?').get(bookId); if (!book) return send(res,404,{error:'not_found'}); if (db.prepare('SELECT 1 FROM order_items WHERE book_id=? LIMIT 1').get(bookId)) return send(res,409,{error:'book_has_orders'}); db.exec('BEGIN IMMEDIATE'); try { db.prepare('DELETE FROM collection_books WHERE book_id=?').run(bookId); db.prepare('DELETE FROM reservations WHERE book_id=?').run(bookId); db.prepare('DELETE FROM restocks WHERE book_id=?').run(bookId); db.prepare('DELETE FROM books WHERE id=?').run(bookId); audit(user,'delete','book',bookId,{title:book.title}); db.exec('COMMIT'); return send(res,200,{ok:true}); } catch (error) { db.exec('ROLLBACK'); throw error; } }
     if (req.method === 'DELETE' && url.pathname.startsWith('/api/admin/orders/')) { const reference = decodeURIComponent(url.pathname.split('/').pop()); const order = db.prepare('SELECT * FROM orders WHERE reference=?').get(reference); if (!order) return send(res,404,{error:'not_found'}); db.exec('BEGIN IMMEDIATE'); try { for (const item of db.prepare('SELECT * FROM reservations WHERE order_id=? AND released_at IS NULL').all(order.id)) db.prepare('UPDATE books SET reserved=MAX(0,reserved-?),updated_at=? WHERE id=?').run(item.qty,now(),item.book_id); db.prepare('DELETE FROM orders WHERE id=?').run(order.id); audit(user,'delete','order',reference,{}); db.exec('COMMIT'); return send(res,200,{ok:true}); } catch (error) { db.exec('ROLLBACK'); throw error; } }
     if (req.method === 'PATCH' && url.pathname.startsWith('/api/admin/orders/')) { if (!can(user,'update_orders')) return send(res,403,{error:'permission_denied',permission:'update_orders'}); const reference = decodeURIComponent(url.pathname.split('/').pop()); const body = await readBody(req); transitionOrder(reference, body.status, body.notes, user); return send(res,200,{ok:true, order:orderView(db.prepare('SELECT * FROM orders WHERE reference=?').get(reference))}); }
+    if (req.method === 'POST' && /\/api\/admin\/orders\/[^/]+\/coupon$/.test(url.pathname)) {
+      if (!can(user,'update_orders')) return send(res,403,{error:'permission_denied',permission:'update_orders'});
+      const parts=url.pathname.split('/'), reference=decodeURIComponent(parts[parts.length-2]), body=await readBody(req), code=String(body.code||'').trim().toUpperCase();
+      const order=db.prepare('SELECT * FROM orders WHERE reference=?').get(reference); if(!order) return send(res,404,{error:'not_found'});
+      if (!code) {
+        const total=Math.max(0,Number(order.subtotal)+Number(order.delivery)+Number(order.total_adjustment||0));
+        db.prepare("UPDATE orders SET discount=0,coupon_code='',total=?,updated_at=? WHERE id=?").run(total,now(),order.id);
+        audit(user,'remove_coupon','order',reference,{});
+        return send(res,200,{ok:true,order:orderView(db.prepare('SELECT * FROM orders WHERE id=?').get(order.id))});
+      }
+      const configured=contentValue('discounts',[]).find(item=>item.active!==false&&String(item.code||'').trim().toUpperCase()===code);
+      if(!configured) return send(res,422,{error:'invalid_discount_code'});
+      const items=db.prepare('SELECT book_id id,title,qty,unit_price FROM order_items WHERE order_id=?').all(order.id);
+      const discount=items.reduce((sum,item)=>sum+discountAmount({id:item.id,price:Number(item.unit_price)},code)*Number(item.qty),0);
+      if(discount<=0) return send(res,422,{error:'coupon_not_applicable'});
+      const finalDiscount=Math.min(discount,Number(order.subtotal));
+      db.prepare('UPDATE orders SET discount=?,coupon_code=?,total=?,updated_at=? WHERE id=?').run(finalDiscount,code,Math.max(0,Number(order.subtotal)-finalDiscount+Number(order.delivery)+Number(order.total_adjustment||0)),now(),order.id);
+      audit(user,'apply_coupon','order',reference,{code,discount});
+      return send(res,200,{ok:true,order:orderView(db.prepare('SELECT * FROM orders WHERE id=?').get(order.id))});
+    }
     if (req.method === 'PUT' && url.pathname.startsWith('/api/admin/orders/')) {
       if (!can(user,'update_orders')) return send(res,403,{error:'permission_denied',permission:'update_orders'});
       const reference=decodeURIComponent(url.pathname.split('/').pop()), body=await readBody(req);
@@ -785,16 +807,28 @@ async function api(req, res, url) {
       const wilayaCode=Number(fields.wilayaCode), communeId=Number(fields.communeId);
       const commune=communes.find(item=>item.wilaya_code===String(wilayaCode).padStart(2,'0')&&Number(item.id)===communeId);
       if(!commune||!deliveryRates[wilayaCode]) return send(res,400,{error:'invalid_shipping'});
-      if(!Array.isArray(body.items)||!body.items.length||body.items.some(item=>!Number.isInteger(item.qty)||item.qty<0||item.qty>100)) return send(res,400,{error:'invalid_items'});
+      if(!Array.isArray(body.items)||!body.items.length||body.items.some(item=>!item.id||!Number.isInteger(item.qty)||item.qty<1||item.qty>100||(item.unit_price!==undefined&&(!Number.isInteger(item.unit_price)||item.unit_price<0||item.unit_price>100000000)))||new Set(body.items.map(item=>String(item.id))).size!==body.items.length) return send(res,400,{error:'invalid_items'});
+      if(body.total!==undefined&&(!Number.isInteger(body.total)||body.total<0||body.total>1000000000))return send(res,400,{error:'invalid_total'});
+      if(order.status==='returned') return send(res,409,{error:'returned_order_items_locked'});
       db.exec('BEGIN IMMEDIATE'); try {
-        const existing=db.prepare('SELECT * FROM order_items WHERE order_id=?').all(order.id), requested=new Map(body.items.map(item=>[String(item.id),item.qty]));
-        for(const old of existing){const reservation=db.prepare('SELECT * FROM reservations WHERE order_id=? AND book_id=?').get(order.id,old.book_id);const next=requested.get(old.book_id)||0; if(reservation&&!reservation.settled_at&&!reservation.released_at){const delta=next-old.qty;if(delta>0){const b=db.prepare('SELECT stock,reserved FROM books WHERE id=?').get(old.book_id);const available=Math.max(0,b.stock-b.reserved);db.prepare('UPDATE books SET reserved=reserved+?,updated_at=? WHERE id=?').run(Math.min(delta,available),now(),old.book_id); }else if(delta<0) db.prepare('UPDATE books SET reserved=MAX(0,reserved-?),updated_at=? WHERE id=?').run(-delta,now(),old.book_id); db.prepare('UPDATE reservations SET qty=? WHERE order_id=? AND book_id=?').run(next,order.id,old.book_id); }
-          if(next) db.prepare('UPDATE order_items SET qty=? WHERE order_id=? AND book_id=?').run(next,order.id,old.book_id); else db.prepare('DELETE FROM order_items WHERE order_id=? AND book_id=?').run(order.id,old.book_id);
+        const existing=db.prepare('SELECT * FROM order_items WHERE order_id=?').all(order.id), requested=new Map(body.items.map(item=>[String(item.id),item]));
+        const existingIds=new Set(existing.map(item=>String(item.book_id))), stamp=now(), inventorySettled=['confirmed','preparing','shipped','delivered'].includes(order.status);
+        for(const old of existing){const reservation=db.prepare('SELECT * FROM reservations WHERE order_id=? AND book_id=?').get(order.id,old.book_id),requestedItem=requested.get(String(old.book_id));const next=requestedItem?.qty||0, delta=next-Number(old.qty), settled=Boolean(reservation?.settled_at)||(!reservation&&inventorySettled); if(settled&&delta!==0){const book=db.prepare('SELECT stock,reserved FROM books WHERE id=?').get(old.book_id);if(delta>0){const available=Math.max(0,Number(book.stock)-Number(book.reserved));if(delta>available)throw new Error(`insufficient_stock:${old.book_id}`);db.prepare('UPDATE books SET stock=stock-?,updated_at=? WHERE id=?').run(delta,stamp,old.book_id);}else db.prepare('UPDATE books SET stock=stock+?,updated_at=? WHERE id=?').run(-delta,stamp,old.book_id);}
+          else if(reservation&&!reservation.settled_at&&!reservation.released_at&&delta!==0){const book=db.prepare('SELECT stock,reserved FROM books WHERE id=?').get(old.book_id);if(delta>0&&delta>Math.max(0,Number(book.stock)-Number(book.reserved)))throw new Error(`insufficient_stock:${old.book_id}`);db.prepare('UPDATE books SET reserved=MAX(0,reserved+?),updated_at=? WHERE id=?').run(delta,stamp,old.book_id);}
+          if(reservation&&settled)db.prepare('UPDATE reservations SET qty=?,settled_at=COALESCE(settled_at,?) WHERE order_id=? AND book_id=?').run(next,stamp,order.id,old.book_id);
+          else if(reservation&&!reservation.released_at)db.prepare('UPDATE reservations SET qty=? WHERE order_id=? AND book_id=?').run(next,order.id,old.book_id);
+          if(next) db.prepare('UPDATE order_items SET qty=?,unit_price=? WHERE order_id=? AND book_id=?').run(next,Number(requestedItem.unit_price??old.unit_price),order.id,old.book_id); else db.prepare('DELETE FROM order_items WHERE order_id=? AND book_id=?').run(order.id,old.book_id);
         }
-        const subtotal=db.prepare('SELECT COALESCE(SUM(qty*unit_price),0) total FROM order_items WHERE order_id=?').get(order.id).total;
+        for(const [bookId,item] of requested){if(existingIds.has(bookId))continue;const book=db.prepare('SELECT id,title,price,stock,reserved FROM books WHERE id=?').get(bookId);if(!book)throw new Error('invalid_order_book');if(inventorySettled){const available=Math.max(0,Number(book.stock)-Number(book.reserved));if(item.qty>available)throw new Error(`insufficient_stock:${bookId}`);db.prepare('UPDATE books SET stock=stock-?,updated_at=? WHERE id=?').run(item.qty,stamp,bookId);db.prepare('INSERT INTO reservations (order_id,book_id,qty,settled_at) VALUES (?,?,?,?)').run(order.id,bookId,item.qty,stamp);}db.prepare('INSERT INTO order_items (order_id,book_id,title,qty,unit_price) VALUES (?,?,?,?,?)').run(order.id,bookId,book.title,item.qty,Number(item.unit_price??book.price));}
+        const updatedItems=db.prepare('SELECT book_id id,qty,unit_price FROM order_items WHERE order_id=?').all(order.id);
+        const subtotal=updatedItems.reduce((sum,item)=>sum+Number(item.qty)*Number(item.unit_price),0);
+        const discount=order.coupon_code ? updatedItems.reduce((sum,item)=>sum+discountAmount({id:item.id,price:Number(item.unit_price)},order.coupon_code)*Number(item.qty),0) : Number(order.discount||0);
         const delivery=deliveryRates[wilayaCode][customer.shipmentType||order.shipment_type]; Object.assign(customer,fields,{wilayaCode,wilaya:fields.wilaya,communeId,commune:commune.commune_name_ascii,communeArabic:commune.commune_name,city:commune.commune_name_ascii});
-        db.prepare('UPDATE orders SET customer_json=?,subtotal=?,delivery=?,total=?,updated_at=? WHERE id=?').run(json(customer),subtotal,delivery,subtotal-Number(order.discount||0)+delivery,now(),order.id);
-        audit(user,'update','order',reference,{items:body.items,customer:fields});db.exec('COMMIT');
+        const finalDiscount=Math.min(discount,subtotal);
+        const totalAdjustment=body.total===undefined?Number(order.total_adjustment||0):Number(body.total)-(subtotal-finalDiscount+delivery);
+        const finalTotal=Math.max(0,subtotal-finalDiscount+delivery+totalAdjustment);
+        db.prepare('UPDATE orders SET customer_json=?,subtotal=?,discount=?,delivery=?,total_adjustment=?,total=?,updated_at=? WHERE id=?').run(json(customer),subtotal,finalDiscount,delivery,totalAdjustment,finalTotal,now(),order.id);
+        audit(user,'update','order',reference,{items:body.items,customer:fields,total:body.total});db.exec('COMMIT');
       } catch(error){db.exec('ROLLBACK');throw error;}
       return send(res,200,{ok:true,order:orderView(db.prepare('SELECT * FROM orders WHERE id=?').get(order.id))});
     }

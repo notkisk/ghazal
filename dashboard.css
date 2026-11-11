@@ -80,9 +80,38 @@ body[data-role="admin"] [data-owner-finance],body[data-role="admin"] .dashboard-
 .order-books{min-width:0}.order-book-line{display:grid;grid-template-columns:minmax(0,1fr) 90px;align-items:center;gap:16px;padding:12px 4px;border-bottom:1px solid #dfd1bb}
 .order-book-line>span{min-width:0;display:grid;gap:4px}.order-book-line strong{white-space:normal;overflow-wrap:anywhere;line-height:1.6;font-size:14px}.order-book-line small{color:var(--muted)}
 .order-line-cover{grid-column:1;grid-row:1;width:64px;height:88px;object-fit:cover;border:1px solid #dfd1bb;display:block}
+.order-editor-section{display:grid;gap:12px;padding:16px;background:#fffdf8;border:1px solid #e3d6c2}
+.order-editor-section>h4{margin:0;color:var(--brown);font-size:15px}
+.order-editor-section.order-books{border:1px solid #e3d6c2;padding:16px;background:#fffdf8}
+.order-book-line{grid-template-columns:64px minmax(0,1fr) 72px 100px auto}
+.order-book-line label{display:grid;gap:4px;color:var(--muted);font-size:10px}
+.order-book-line label input,.order-add-book input,.order-add-book input[type=search],.order-coupon input,.order-total-lines input{min-height:40px;border:1px solid #d5c4aa;background:#fff;color:var(--ink);padding:8px 10px;font:13px var(--sans);border-radius:2px}
+.order-book-info{grid-column:2;grid-row:1;direction:rtl;text-align:right;display:grid;align-content:center;gap:4px;min-width:0}
+.order-book-info small{color:var(--muted)}
+.order-add-book{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:8px;position:relative}
+.order-add-book label{display:grid;gap:5px;color:var(--muted);font-size:12px}
+.order-add-book label:first-child{grid-column:1/-1}
+.order-book-search-results{grid-column:1/-1;display:grid;max-height:280px;overflow:auto;border:1px solid #d5c4aa;background:#fff}
+.order-book-search-results[hidden]{display:none}
+.order-book-search-result{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:10px 12px;text-align:right;background:#fff;border:0;border-bottom:1px solid #eee3d2;cursor:pointer;color:var(--ink)}
+.order-book-search-result>span{display:grid;gap:3px;min-width:0}.order-book-search-result small,.order-book-search-empty{color:var(--muted)}
+.order-book-search-result i{font-style:normal;color:var(--brown);font-weight:700}
+.order-book-search-empty{margin:0;padding:12px}
+.order-coupon{display:grid;grid-template-columns:minmax(180px,1fr) auto;align-items:end;gap:10px;padding:16px;border:1px solid #cdbb9d;background:#fffdf8}
+.order-coupon h4{grid-column:1/-1;margin:0;color:var(--brown);font-size:15px}
+.order-coupon small{grid-column:1/-1;color:var(--brown);font-weight:700}
+.order-coupon-state{font-weight:700;color:#3f704d!important}
+.order-coupon-state.is-disabled{color:#963d32!important}
+.order-total-lines label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:700}
+.order-total-lines label input{width:150px}
+.order-total-lines{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;border:0;margin:0;padding:0;font-size:12px}
+.order-total-lines>span,.order-total-lines>label{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;background:#f7f0e3;color:var(--ink)}
+.order-quick-date-filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.order-quick-date-filters .button{min-height:36px;padding:0 12px;font-size:11px;white-space:nowrap}
 .publisher-feature-editor[draggable=true]{cursor:grab}.publisher-feature-editor.is-dragging{opacity:.45}.feature-drag-handle{border:1px solid #d9cbb7;background:#fbf8f1;color:var(--brown);padding:7px 10px;cursor:grab;font:12px var(--sans);touch-action:none}.publisher-feature-admin-mark img{width:100%;height:100%;object-fit:contain}
-.order-book-line{direction:ltr;grid-template-columns:64px minmax(0,1fr) 90px;align-items:center;gap:16px;min-height:112px}
-.order-book-line>span{grid-column:2;grid-row:1;direction:rtl;text-align:right}
-.order-book-line>input[type=number]{grid-column:3;grid-row:1}
+.order-book-line{direction:ltr;grid-template-columns:64px minmax(0,1fr) 72px 100px auto;align-items:center;gap:10px;min-height:112px}
+.order-book-line>input[data-order-qty]{grid-column:3;grid-row:1}
+.order-book-line>input[data-order-price]{grid-column:4;grid-row:1}
+.order-book-line>button{grid-column:5;grid-row:1}
 .order-delete{width:auto!important;min-width:0!important;justify-self:start;padding:6px 12px!important;color:#a12626!important;border:1px solid #c66!important;background:#fff7f5!important;flex:0 0 auto!important}
-@media(max-width:700px){.order-edit-fields{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.order-edit-fields{grid-template-columns:1fr 1fr}.order-book-line{grid-template-columns:48px minmax(0,1fr) 54px 72px auto;gap:6px}.order-line-cover{width:48px;height:66px}.order-book-line label{font-size:9px}.order-book-line label input{padding:7px 4px}.order-coupon{grid-template-columns:1fr}.order-coupon h4,.order-coupon small{grid-column:1}.order-total-lines{grid-template-columns:1fr 1fr}.order-total-lines>label{align-items:flex-start;flex-direction:column}}

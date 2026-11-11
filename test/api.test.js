@@ -74,6 +74,26 @@ test('checkout accepts the canonical commune id from the selector', () => {
   assert.match(reference, /^GZ-/);
 });
 
+test('admin order edits persist added books and custom unit prices in totals', async () => {
+  const reference=createOrder({ customer:{customer:'تعديل الطلب',phone:'0555555555'},items:[{id:'stranger',qty:1}],shipping:{type:'home',wilayaCode:16,commune:'Alger Centre'} });
+  const base=await listen(), token=await ownerToken(base), commune=require('../data/algeria-communes-58-wilayas.json').find(item=>item.wilaya_code==='16');
+  const response=await fetch(`${base}/api/admin/orders/${encodeURIComponent(reference)}`,{method:'PUT',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({customer:{customer:'تعديل الطلب',phone:'0555555555',address:'',wilayaCode:16,wilaya:'Alger',communeId:commune.id},items:[{id:'stranger',qty:1,unit_price:2450},{id:'world-yesterday',qty:2,unit_price:1700}]})});
+  assert.equal(response.status,200);
+  const {order}=await response.json();
+  assert.equal(order.subtotal,5850);
+  assert.equal(order.total,6450);
+  assert.deepEqual(order.items.map(item=>[item.id,item.qty,item.unit_price]).sort(),[['stranger',1,2450],['world-yesterday',2,1700]].sort());
+  db.prepare('UPDATE store_content SET value_json=?,updated_at=? WHERE key=?').run(JSON.stringify([{id:'test-order-coupon',name:'اختبار',code:'READ10',type:'percent',value:10,appliesToAll:true,active:true}]),new Date().toISOString(),'discounts');
+  const applied=await fetch(`${base}/api/admin/orders/${encodeURIComponent(reference)}/coupon`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({code:'READ10'})});
+  assert.equal((await applied.json()).order.discount,585);
+  const removed=await fetch(`${base}/api/admin/orders/${encodeURIComponent(reference)}/coupon`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({code:''})});
+  const cleared=(await removed.json()).order;
+  assert.equal(cleared.discount,0);
+  assert.equal(cleared.coupon_code,'');
+  assert.equal(cleared.total,6450);
+  await closeServer();
+});
+
 test('checkout accepts an order without a delivery address and derives one for Ecotrack', () => {
   const reference = createOrder({ customer:{customer:'اختبار العنوان الاختياري',phone:'0555555555'}, items:[{id:'plague',qty:1}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} });
   assert.match(reference, /^GZ-/);

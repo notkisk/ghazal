@@ -131,11 +131,11 @@ test('homepage best sellers use confirmed orders and a stable carousel fallback'
 test('cache-busting versions match the latest edited assets', () => {
   const index = read('index.html');
   const adminHtml = read('admin.html');
-  assert.match(index, /script\.js\?v=20261110-6/);
+  assert.match(index, /script\.js\?v=20261111-1/);
   assert.match(index, /enhancements\.css\?v=20261110-7/);
   assert.match(index, /api\.js\?v=20261110-3/);
   assert.match(adminHtml, /admin-import-utils\.js\?v=20261110-1/);
-  assert.match(adminHtml, /admin\.js\?v=20261110-6/);
+  assert.match(adminHtml, /admin\.js\?v=20261111-10/);
   assert.match(adminHtml, /admin-inventory-export\.js\?v=20261110-3/);
   assert.match(adminHtml, /admin-sales-export\.js\?v=20261110-1/);
   assert.match(read('admin.js'), /data-receive-book-stock/);
@@ -143,7 +143,7 @@ test('cache-busting versions match the latest edited assets', () => {
   assert.match(read('admin.js'), /data-export-inventory-covers/);
   assert.match(adminHtml, /enhancements\.css\?v=20261110-7/);
   assert.match(adminHtml, /api\.js\?v=20261110-3/);
-  assert.match(adminHtml, /dashboard\.css\?v=20261107-4/);
+  assert.match(adminHtml, /dashboard\.css\?v=20261111-5/);
   assert.match(adminHtml, /data-export-sales/);
   assert.match(read('server.js'), /\/api\/admin\/sales-report/);
 });
