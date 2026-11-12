@@ -9,19 +9,28 @@
 
   function findBookMatch(books, values) {
     const isbn = normalizeIsbn(values.isbn);
-    if (isbn) {
-      const isbnMatches = books.filter(book => normalizeIsbn(book.isbn) === isbn);
-      if (isbnMatches.length === 1) return isbnMatches[0];
-    }
     const title = normalizeImportText(values.title);
     const author = normalizeImportText(values.author);
     const publisher = normalizeImportText(values.publisher);
-    if (!title || !author) return null;
-    const titleAuthorMatches = books.filter(book => normalizeImportText(book.title) === title && normalizeImportText(book.author) === author);
-    const matches = publisher
-      ? titleAuthorMatches.filter(book => normalizeImportText(book.publisher) === publisher)
-      : titleAuthorMatches;
-    return matches.length === 1 ? matches[0] : null;
+    const titleAuthorMatches = title && author
+      ? books.filter(book => normalizeImportText(book.title) === title && normalizeImportText(book.author) === author)
+      : [];
+    if (publisher) {
+      const publisherMatches = titleAuthorMatches.filter(book => normalizeImportText(book.publisher) === publisher);
+      if (publisherMatches.length === 1) return publisherMatches[0];
+    }
+    if (isbn) {
+      const isbnMatches = books.filter(book => normalizeIsbn(book.isbn) === isbn);
+      if (isbnMatches.length === 1) {
+        const candidate = isbnMatches[0];
+        const agrees = (!title || normalizeImportText(candidate.title) === title)
+          && (!author || normalizeImportText(candidate.author) === author)
+          && (!publisher || normalizeImportText(candidate.publisher) === publisher);
+        if (agrees) return candidate;
+      }
+    }
+    if (!publisher && titleAuthorMatches.length === 1) return titleAuthorMatches[0];
+    return null;
   }
 
   function normalizeImportText(value) {
