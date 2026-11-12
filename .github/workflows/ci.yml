@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run tests and startup check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run test suite
+        run: npm test -- --test-force-exit
+
+      - name: Verify server startup and health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          data_dir="$(mktemp -d)"
+          GHAZAL_DATA_DIR="$data_dir" \
+            GHAZAL_ADMIN_EMAIL="ci@example.com" \
+            GHAZAL_ADMIN_PASSWORD="ci-test-password-123" \
+            PORT=3137 node server.js >"$data_dir/server.log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:3137/api/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat "$data_dir/server.log"
+          exit 1

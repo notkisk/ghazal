@@ -9,9 +9,19 @@
 
   function findBookMatch(books, values) {
     const isbn = normalizeIsbn(values.isbn);
-    const title = String(values.title || '').trim().toLocaleLowerCase('ar');
-    const author = String(values.author || '').trim().toLocaleLowerCase('ar');
-    return books.find(book => (isbn && normalizeIsbn(book.isbn) === isbn) || (String(book.title || '').trim().toLocaleLowerCase('ar') === title && String(book.author || '').trim().toLocaleLowerCase('ar') === author));
+    if (isbn) {
+      const isbnMatches = books.filter(book => normalizeIsbn(book.isbn) === isbn);
+      if (isbnMatches.length === 1) return isbnMatches[0];
+    }
+    const title = normalizeImportText(values.title);
+    const author = normalizeImportText(values.author);
+    const publisher = normalizeImportText(values.publisher);
+    if (!title || !author) return null;
+    const titleAuthorMatches = books.filter(book => normalizeImportText(book.title) === title && normalizeImportText(book.author) === author);
+    const matches = publisher
+      ? titleAuthorMatches.filter(book => normalizeImportText(book.publisher) === publisher)
+      : titleAuthorMatches;
+    return matches.length === 1 ? matches[0] : null;
   }
 
   function normalizeImportText(value) {

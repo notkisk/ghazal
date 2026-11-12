@@ -15,6 +15,24 @@ test('bulk import updates an existing book by title and author and replaces its 
   assert.equal(next[0].price, 1400);
 });
 
+test('bulk import keeps same-title editions separate by publisher', () => {
+  const books = [
+    { id:'zarad-jamal',title:'هكذا تكلم زرادشت',author:'فريدريك نيتشه',publisher:'منشورات الجمل',price:1800 },
+    { id:'zarad-rafidain',title:'هكذا تكلم زرادشت',author:'فريدريك نيتشه',publisher:'دار الرافدين',price:2200 }
+  ];
+  const jamal = findBookMatch(books,{title:'هكذا تكلم زرادشت',author:'فريدريك نيتشه',publisher:'منشورات الجمل'});
+  const rafidain = findBookMatch(books,{title:'هكذا تكلم زرادشت',author:'فريدريك نيتشه',publisher:'دار الرافدين'});
+  assert.equal(jamal.id,'zarad-jamal');
+  assert.equal(rafidain.id,'zarad-rafidain');
+  assert.equal(findBookMatch(books,{title:'هكذا تكلم زرادشت',author:'فريدريك نيتشه'}),null);
+
+  const updated = upsertBooks(books,[{...jamal,price:1900},{...rafidain,price:2300}]);
+  assert.deepEqual(updated.map(book=>[book.id,book.publisher,book.price]),[
+    ['zarad-jamal','منشورات الجمل',1900],
+    ['zarad-rafidain','دار الرافدين',2300]
+  ]);
+});
+
 test('bulk import cover work respects its concurrency limit and preserves row order', async () => {
   let active = 0;
   let peak = 0;
