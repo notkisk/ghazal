@@ -25,6 +25,7 @@ window.GhazalAPI = (() => {
     adminOrders: (token) => request('/api/admin/orders', { headers: { authorization: `Bearer ${token}` } }),
     catalog: () => request('/api/catalog'),
     adminCatalog: (token) => request('/api/admin/catalog', { headers: { authorization: `Bearer ${token}` } }),
+    updateBookPrices: (token, updates) => request('/api/admin/books/prices', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ updates }) }),
     adminInventoryReport: (token) => request('/api/admin/inventory-report', { headers: { authorization: `Bearer ${token}` } }),
     adminSalesReport: (token, { from = '', to = '', scope = 'all' } = {}) => { const query = new URLSearchParams({ from, to, scope }); return request(`/api/admin/sales-report?${query}`, { headers:{ authorization:`Bearer ${token}` } }); },
     restockBook: (token, bookId, quantity) => request('/api/admin/restock', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ bookId, quantity, reason:'supplier_purchase' }) }),

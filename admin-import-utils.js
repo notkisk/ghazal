@@ -14,6 +14,46 @@
     return books.find(book => (isbn && normalizeIsbn(book.isbn) === isbn) || (String(book.title || '').trim().toLocaleLowerCase('ar') === title && String(book.author || '').trim().toLocaleLowerCase('ar') === author));
   }
 
+  function normalizeImportText(value) {
+    return String(value ?? '').normalize('NFKD').replace(/[\u064B-\u065F\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').toLocaleLowerCase('ar').trim().replace(/\s+/g, ' ');
+  }
+
+  function priceUpdateColumnMapping(headers) {
+    const aliases = {
+      title:['عنوان الكتاب','العنوان','اسم الكتاب','title','titre'],
+      author:['المؤلف','الكاتب','author','auteur'],
+      publisher:['دار النشر','الناشر','publisher','éditeur','editeur'],
+      price:['سعر البيع (دج)','سعر البيع','السعر','price','prix']
+    };
+    const normalize = value => String(value || '').replace(/[*☆★]/g, '').trim().toLocaleLowerCase('ar').replace(/[._-]+/g, ' ');
+    return Object.fromEntries(Object.entries(aliases).map(([field, options]) => {
+      const index = headers.findIndex(header => options.some(alias => normalize(alias) === normalize(header)));
+      return [field, index >= 0 ? String(index) : ''];
+    }));
+  }
+
+  function findPriceBookMatches(books, values) {
+    const title = normalizeImportText(values.title);
+    if (!title) return [];
+    const author = normalizeImportText(values.author);
+    const publisher = normalizeImportText(values.publisher);
+    return books.filter(book => normalizeImportText(book.title) === title
+      && (!author || normalizeImportText(book.author) === author)
+      && (!publisher || normalizeImportText(book.publisher) === publisher));
+  }
+
+  function parseDzdPrice(value) {
+    let text = String(value ?? '').replace(/[٠-٩۰-۹]/g, digit => String(digit.charCodeAt(0) >= 0x06f0 ? digit.charCodeAt(0) - 0x06f0 : digit.charCodeAt(0) - 0x0660));
+    text = text.replace(/[^\d.,٬\s]/g, '').replace(/[\s٬]/g, '');
+    let normalized = '';
+    if (/^\d+$/.test(text)) normalized = text;
+    else if (/^\d{1,3}(?:[.,]\d{3})+$/.test(text)) normalized = text.replace(/[.,]/g, '');
+    else if (/^\d{1,3}(?:\.\d{3})+,\d{2}$/.test(text) && text.endsWith(',00')) normalized = text.replace(/\.\d{3}/g, '').replace(/,00$/, '');
+    else if (/^\d+[.,]0{1,2}$/.test(text)) normalized = text.replace(/[.,]0{1,2}$/, '');
+    const price = Number(normalized);
+    return /^\d+$/.test(normalized) && Number.isSafeInteger(price) && price <= 100000000 ? price : null;
+  }
+
   async function mapWithConcurrency(items, limit, mapper) {
     const results = new Array(items.length);
     let nextIndex = 0;
@@ -37,5 +77,5 @@
     return next;
   }
 
-  return { findBookMatch, mapWithConcurrency, upsertBooks };
+  return { findBookMatch, findPriceBookMatches, mapWithConcurrency, normalizeImportText, parseDzdPrice, priceUpdateColumnMapping, upsertBooks };
 });

@@ -87,7 +87,7 @@ let orderStartDate = '';
 let orderEndDate = '';
 let orderQuickRange = '';
 let statsPeriod = 'week';
-let statsScope = 'confirmed';
+let statsScope = 'all';
 let statsStartDate = '';
 let statsEndDate = '';
 let selectedOrderRefs = new Set();
@@ -103,6 +103,9 @@ let bulkBookRows = [];
 let bulkBookHeaders = [];
 let bulkBookMapping = {};
 let bulkTemplateDetected = false;
+let priceUpdateRows = [];
+let priceUpdateMapping = {};
+let priceUpdatePlan = [];
 const ECOTRACK_COLUMNS = ['reference commande','nom et prenom du destinataire*','telephone*','telephone 2','code wilaya*','wilaya de livraison','commune de livraison*','adresse de livraison*','produit*','poids (kg)','montant du colis*','remarque','FRAGILE\n( si oui mettez OUI sinon laissez vide )','ECHANGE\n( si oui mettez OUI sinon laissez vide )','PICK UP\n( si oui mettez OUI sinon laissez vide )','RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )','STOP DESK\n( si oui mettez OUI sinon laissez vide )','Lien map'];
 let ownerTab = 'books';
 let collectionsLoaded = false;
@@ -301,6 +304,7 @@ function renderBooksWorkspace() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / bookPageSize)); bookPage = Math.min(bookPage, totalPages); const start = (bookPage - 1) * bookPageSize; const shown = filtered.slice(start, start + bookPageSize);
   list.innerHTML = `<div class="book-workspace-toolbar"><label class="admin-search"><span>⌕</span><input id="owner-book-search" type="search" value="${esc(bookQuery)}" placeholder="ابحث بالعنوان أو المؤلف أو الناشر أو ISBN" /></label><select id="owner-book-stock"><option value="all" ${bookStockFilter === 'all' ? 'selected' : ''}>كل حالات المخزون</option><option value="available" ${bookStockFilter === 'available' ? 'selected' : ''}>متوفر</option><option value="empty" ${bookStockFilter === 'empty' ? 'selected' : ''}>غير متوفر</option></select><select id="owner-book-cover"><option value="all" ${bookCoverFilter === 'all' ? 'selected' : ''}>كل الأغلفة</option><option value="default" ${bookCoverFilter === 'default' ? 'selected' : ''}>غلاف افتراضي فقط</option><option value="set" ${bookCoverFilter === 'set' ? 'selected' : ''}>غلاف مخصص فقط</option></select><select id="owner-book-category"><option value="all">كل التصنيفات</option>${Object.entries(genres).map(([id, genre]) => `<option value="${esc(id)}" ${bookCategoryFilter === id ? 'selected' : ''}>${esc(genre.title)}</option>`).join('')}</select><select id="owner-book-genre"><option value="all">كل أنواع الكتب</option>${bookGenres.map(genre => `<option value="${esc(genre)}" ${bookGenreFilter === genre ? 'selected' : ''}>${esc(genre)}</option>`).join('')}</select><label class="book-page-size">كتب في الصفحة<select id="owner-book-page-size">${[10,25,50,100].map(size => `<option value="${size}" ${bookPageSize === size ? 'selected' : ''}>${size}</option>`).join('')}</select></label><button class="button button-outline" type="button" data-open-bulk-books>استيراد جماعي</button><button class="button button-outline" type="button" data-export-book-inventory>تحميل تقرير المخزون Excel ↙</button>${read('ghazal.lastImport.v1', null) ? '<button class="text-button" type="button" data-undo-import>تراجع عن آخر استيراد</button>' : ''}</div><div class="book-workspace-summary"><strong>${filtered.length ? `${start + 1}–${Math.min(start + shown.length, filtered.length)}` : '0'} من ${filtered.length}</strong> كتاب · ${books.length} إجمالًا · ${books.filter(book => Number(book.stock) > 0).length} متوفر${defaultCoverBooks().length ? ` · <button class="text-button cover-missing-link" type="button" data-book-cover-filter="default">${defaultCoverBooks().length} بغلاف افتراضي</button>` : ''}</div><div class="book-admin-list">${shown.length ? shown.slice().reverse().map(book => `<article class="book-admin-card"><img src="${bookCover(book)}" alt="غلاف ${esc(book.title)}" /><div class="book-admin-main"><strong>${esc(book.title)}</strong><small>${esc(book.author)} · ${esc(book.publisher)}</small>${isDefaultCover(book) ? '<span class="cover-missing-badge">غلاف افتراضي</span>' : ''}<p>${esc(book.review || book.note || 'لا توجد مراجعة قصيرة بعد.')}</p></div><div class="book-admin-price"><b>${money(book.price)}</b><span class="${Number(book.stock) > 0 ? 'stock-ok' : 'stock-off'}">${Number(book.stock) > 0 ? `${Number(book.stock)} نسخة` : 'غير متوفر'}</span><button class="text-button" type="button" data-edit-book="${esc(book.id)}">تعديل</button><button class="text-button" type="button" data-receive-book-stock="${esc(book.id)}">استلام توريد</button><button class="text-button danger-action" type="button" data-delete-book="${esc(book.id)}">حذف</button></div></article>`).join('') : '<p class="owner-note">لا توجد كتب تطابق البحث الحالي.</p>'}</div>${totalPages > 1 ? `<nav class="book-pagination" aria-label="صفحات الكتب"><button class="button button-outline" type="button" data-books-page="${bookPage - 1}" ${bookPage === 1 ? 'disabled' : ''}>السابق</button><span>صفحة ${bookPage} من ${totalPages}</span><button class="button button-outline" type="button" data-books-page="${bookPage + 1}" ${bookPage === totalPages ? 'disabled' : ''}>التالي</button></nav>` : ''}`;
   list.querySelector('[data-export-book-inventory]')?.insertAdjacentHTML('beforebegin', `<label class="book-page-size"><input type="checkbox" data-export-inventory-covers ${includeInventoryCoverLinks ? 'checked' : ''} /> تضمين روابط الأغلفة</label>`);
+  list.querySelector('[data-export-book-inventory]')?.insertAdjacentHTML('beforebegin', '<button class="button button-outline" type="button" data-open-bulk-price>تحديث الأسعار من ملف المخزون</button>');
   list.querySelector('.book-workspace-toolbar .admin-search')?.remove();
   const persistentSearch = $('#owner-book-search'); if (persistentSearch) persistentSearch.value = bookQuery;
 }
@@ -741,6 +745,66 @@ function renderBulkBookMapping() {
   $('#bulk-book-import').disabled = !bulkBookRows.length || !BULK_BOOK_FIELDS.filter(field => field.required).every(field => bulkBookMapping[field.id] !== '');
 }
 function openBulkBooks() { ensureBulkBookOverlay(); if (!$('#bulk-book-template-link')) $('#bulk-book-overlay .bulk-upload-zone').insertAdjacentHTML('afterend', '<a id="bulk-book-template-link" class="text-button" href="assets/templates/ghazal-book-import-template.xlsx" download>تحميل قالب Excel الجاهز ↙</a>'); $('#bulk-book-overlay').hidden = false; $('#bulk-book-file').value = ''; $('#bulk-book-file-name').textContent = 'لم يتم اختيار ملف'; $('#bulk-book-mapping').innerHTML = '<p class="owner-note">ابدأ باختيار ملف spreadsheet.</p>'; $('#bulk-book-import').disabled = true; }
+const BULK_PRICE_FIELDS = [
+  { id:'title', label:'عنوان الكتاب', aliases:['عنوان الكتاب','العنوان','اسم الكتاب','title','titre'], required:true },
+  { id:'author', label:'المؤلف (للمطابقة الأدق)', aliases:['المؤلف','الكاتب','author','auteur'], required:false },
+  { id:'publisher', label:'دار النشر (للمطابقة الأدق)', aliases:['دار النشر','الناشر','publisher','éditeur','editeur'], required:false },
+  { id:'price', label:'سعر البيع (دج)', aliases:['سعر البيع (دج)','سعر البيع','السعر','price','prix'], required:true }
+];
+function ensureBulkPriceOverlay() {
+  if ($('#bulk-price-overlay')) return;
+  document.body.insertAdjacentHTML('beforeend', `<div class="overlay admin-overlay" id="bulk-price-overlay" hidden><div class="form-panel bulk-import-panel" role="dialog" aria-modal="true" aria-labelledby="bulk-price-title"><button class="close-button" type="button" data-close-price-import>×</button><p class="eyebrow">الغزال / تحديث أسعار الكتب</p><h2 id="bulk-price-title">تحديث الأسعار <em>فقط</em></h2><p class="owner-copy">استخدم ملف «تقرير المخزون Excel» نفسه بعد تعديل عمود سعر البيع. العنوان والسعر مطلوبان؛ أضف المؤلف ودار النشر إن توفرا لمطابقة أدق. الصفوف الملتبسة تُتجاهل، ولا تتغير الكميات أو بيانات الكتب الأخرى. صف الإجمالي يُتجاهل تلقائيًا.</p><label class="bulk-upload-zone">اختر ملف تقرير المخزون<input id="bulk-price-file" type="file" accept=".xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /><small id="bulk-price-file-name">لم يتم اختيار ملف</small></label><div id="bulk-price-mapping"><p class="owner-note">اختر ملف تقرير المخزون الذي نزّلته من لوحة الكتب.</p></div><div class="bulk-import-actions"><button class="button button-dark" id="bulk-price-apply" type="button" disabled>تحديث الأسعار المطابقة</button><button class="text-button" type="button" data-close-price-import>إلغاء</button></div></div></div>`);
+  $('#bulk-price-file').addEventListener('change', async event => {
+    const file = event.target.files?.[0]; if (!file) return;
+    $('#bulk-price-file-name').textContent = file.name; $('#bulk-price-mapping').innerHTML = '<p class="owner-note">جارٍ قراءة الملف…</p>'; $('#bulk-price-apply').disabled = true;
+    try {
+      const rows = await parseBookSpreadsheet(file); if (rows.length < 2) throw new Error('empty');
+      const headers = rows[0].map(String); priceUpdateHeaderCache = headers; priceUpdateRows = rows.slice(1);
+      priceUpdateMapping = window.GhazalAdminImport.priceUpdateColumnMapping(headers);
+      renderBulkPriceMapping();
+    } catch (error) { priceUpdateRows = []; priceUpdatePlan = []; $('#bulk-price-mapping').innerHTML = '<p class="bulk-error">تعذر قراءة الملف. استخدم ملف Excel أو CSV سليمًا.</p>'; console.error(error); }
+  });
+  $('#bulk-price-mapping').addEventListener('change', event => { if (event.target.matches('[data-price-map]')) { priceUpdateMapping[event.target.dataset.priceMap] = event.target.value; renderBulkPriceMapping(); } });
+  $('#bulk-price-apply').addEventListener('click', applyBulkPriceUpdates);
+  $$('[data-close-price-import]').forEach(button => button.addEventListener('click', () => { $('#bulk-price-overlay').hidden = true; }));
+}
+function renderBulkPriceMapping() {
+  const actualHeaders = priceUpdateHeaderCache;
+  if (!actualHeaders.length) return;
+  const options = `<option value="">— اختر العمود —</option>${actualHeaders.map((header,index)=>`<option value="${index}">${esc(header)}</option>`).join('')}`;
+  const maps = BULK_PRICE_FIELDS.map(field=>`<label class="bulk-map-row"><span>${field.label}${field.required?' *':''}</span><select data-price-map="${field.id}">${options}</select></label>`).join('');
+  $('#bulk-price-mapping').innerHTML = `<div class="bulk-map-grid"><h3>مطابقة أعمدة تقرير المخزون</h3>${maps}</div><div class="bulk-price-preview" data-price-preview><p class="owner-note">راجع مطابقة الأعمدة لبناء المعاينة.</p></div>`;
+  BULK_PRICE_FIELDS.forEach(field=>{const select=$(`[data-price-map="${field.id}"]`);select.value=priceUpdateMapping[field.id]||'';});
+  buildBulkPricePlan();
+}
+let priceUpdateHeaderCache = [];
+function buildBulkPricePlan() {
+  const preview=$('[data-price-preview]'), button=$('#bulk-price-apply'); if(!preview||!button)return;
+  if(BULK_PRICE_FIELDS.some(field=>field.required&&priceUpdateMapping[field.id]==='')) {preview.innerHTML='<p class="owner-note">اختر عمودي عنوان الكتاب والسعر لمتابعة المعاينة. المؤلف ودار النشر اختياريان ويزيدان دقة المطابقة.</p>';button.disabled=true;return;}
+  const used=new Set(), plan=[], skipped={unmatched:0,ambiguous:0,invalid:0,duplicate:0}, skippedRows=[];
+  const markSkipped=(kind,title)=>{skipped[kind]++;if(skippedRows.length<12)skippedRows.push({title:title||'صف بلا عنوان',reason:{unmatched:'لا يوجد كتاب مطابق',ambiguous:'أكثر من كتاب يطابق البيانات',invalid:'بيانات أو سعر غير صالح',duplicate:'الكتاب مكرر في الملف'}[kind]});};
+  for(const row of priceUpdateRows){
+    const readField=id=>priceUpdateMapping[id]===''?'':String(row[Number(priceUpdateMapping[id])]??'').trim();
+    const title=readField('title'),author=readField('author'),publisher=readField('publisher'),rawPrice=readField('price');
+    if(normalizeArabicSearch(title)==='الاجمالي'||(!title&&!author&&!publisher&&!rawPrice))continue;
+    if(!title){markSkipped('invalid',title);continue;}
+    const matches=window.GhazalAdminImport.findPriceBookMatches(books,{title,author,publisher});
+    if(!matches.length){markSkipped('unmatched',title);continue;} if(matches.length!==1){markSkipped('ambiguous',title);continue;}
+    const book=matches[0], price=window.GhazalAdminImport.parseDzdPrice(rawPrice); if(price===null){markSkipped('invalid',title);continue;}
+    if(used.has(book.id)){markSkipped('duplicate',title);continue;} used.add(book.id); plan.push({id:book.id,title:book.title,author:book.author,publisher:book.publisher,oldPrice:Number(book.price)||0,price});
+  }
+  priceUpdatePlan=plan;
+  const skippedText=`${skipped.unmatched} غير مطابق · ${skipped.ambiguous} ملتبس · ${skipped.invalid} غير صالح · ${skipped.duplicate} مكرر`;
+  preview.innerHTML=`<p class="owner-note">${plan.length} سعرًا جاهزًا للتحديث · ${skippedText}. لن تُرسل أي كميات.</p>${plan.length?`<div class="bulk-preview-scroll"><table><thead><tr><th>الكتاب</th><th>السعر الحالي</th><th>السعر الجديد</th></tr></thead><tbody>${plan.slice(0,8).map(item=>`<tr><td>${esc(item.title)} · ${esc(item.author)}</td><td>${money(item.oldPrice)}</td><td>${money(item.price)}</td></tr>`).join('')}</tbody></table>${plan.length>8?`<small>معاينة أول 8 من ${plan.length} كتابًا.</small>`:''}</div>`:''}${skippedRows.length?`<details><summary>تفاصيل أول ${skippedRows.length} صفوف متروكة</summary><ul>${skippedRows.map(item=>`<li>${esc(item.title)}: ${esc(item.reason)}</li>`).join('')}</ul>${Object.values(skipped).reduce((sum,count)=>sum+count,0)>skippedRows.length?'<small>توجد صفوف متروكة إضافية.</small>':''}</details>`:''}`;
+  button.disabled=!plan.length; button.textContent=plan.length?`تحديث أسعار ${plan.length} كتاب`:'لا توجد أسعار مطابقة للتحديث';
+}
+async function applyBulkPriceUpdates() {
+  const button=$('#bulk-price-apply'); if(!priceUpdatePlan.length||button.disabled)return;
+  const updates=priceUpdatePlan.map(({id,price})=>({id,price})); button.disabled=true;button.textContent='جارٍ تحديث الأسعار…';
+  try { const result=await window.GhazalAPI.updateBookPrices(sessionStorage.getItem(ADMIN_SESSION_KEY),updates); for(const item of priceUpdatePlan){const book=books.find(candidate=>candidate.id===item.id);if(book)book.price=item.price;} alert(`تم تحديث أسعار ${result.updated} كتابًا. بقيت الكميات وبيانات الكتب كما هي.`); $('#bulk-price-overlay').hidden=true; renderOwner(); }
+  catch(error){console.error('bulk_price_update_failed',error);const reason=String(error.message||'');const message=reason==='invalid_book_price_updates'?'تحقق من الملف والأسعار، ثم أعد المحاولة.':reason==='book_not_found'?'تغير الفهرس منذ تحميل الملف. حدّث الصفحة وأعد المحاولة.':reason==='permission_denied'?'حسابك لا يملك صلاحية تعديل الكتب. اطلب من المالك تفعيلها.':reason==='not_found'||reason==='request_failed_404'?'الخادم يعمل بنسخة أقدم لا تدعم تحديث الأسعار. أوقف npm start ثم شغّله مجددًا لتحميل التحديث.':'تعذر تحديث الأسعار. لم تُحفظ أي تغييرات.';alert(message);button.disabled=false;button.textContent=`تحديث أسعار ${updates.length} كتاب`;}
+}
+function openBulkPriceUpdate() { ensureBulkPriceOverlay(); $('#bulk-price-overlay').hidden=false; $('#bulk-price-file').value='';$('#bulk-price-file-name').textContent='لم يتم اختيار ملف';$('#bulk-price-mapping').innerHTML='<p class="owner-note">اختر ملف تقرير المخزون الذي نزّلته من لوحة الكتب.</p>';$('#bulk-price-apply').disabled=true;priceUpdateRows=[];priceUpdatePlan=[];priceUpdateHeaderCache=[];priceUpdateMapping={}; }
 function bulkValue(row, field) { const key = typeof field === 'string' ? field : field.id; const index = bulkBookMapping[key]; return index === '' || index === undefined ? '' : String(row[Number(index)] ?? '').trim(); }
 function importNumber(value, integer = false) {
   const normalized = String(value ?? '').trim().replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit))).replace(/،/g, ',');
@@ -1075,6 +1139,7 @@ $('#owner-list').addEventListener('click', event => {
   const editBook = event.target.closest('[data-edit-book]');
   if (editBook) { openForm('book', editBook.dataset.editBook); return; }
   if (event.target.closest('[data-open-bulk-books]')) { openBulkBooks(); return; }
+  if (event.target.closest('[data-open-bulk-price]')) { openBulkPriceUpdate(); return; }
   if (event.target.closest('[data-export-book-inventory]')) { exportBookInventory(); return; }
   if (event.target.closest('[data-receive-book-stock]')) { receiveBookStock(event.target.closest('[data-receive-book-stock]').dataset.receiveBookStock); return; }
   if (event.target.closest('[data-undo-import]')) { undoLastImport(); return; }

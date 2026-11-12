@@ -99,6 +99,23 @@ test('admin order edits persist added books and custom unit prices in totals', a
   }
 });
 
+test('bulk price updates change only existing book prices', async () => {
+  const base=await listen(), token=await ownerToken(base);
+  try {
+    const response=await fetch(`${base}/api/admin/books/prices`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({updates:[{id:'stranger',price:2450},{id:'world-yesterday',price:3100}]})});
+    assert.equal(response.status,200);
+    assert.deepEqual(await response.json(),{ok:true,updated:2});
+    assert.deepEqual(db.prepare('SELECT id,price,stock,reserved FROM books WHERE id IN (?,?) ORDER BY id').all('stranger','world-yesterday').map(book=>[book.id,book.price,book.stock,book.reserved]),[
+      ['stranger',2450,10,0],
+      ['world-yesterday',3100,10,0]
+    ]);
+  } finally {
+    db.prepare('UPDATE books SET price=1900 WHERE id=?').run('stranger');
+    db.prepare('UPDATE books SET price=2600 WHERE id=?').run('world-yesterday');
+    await closeServer();
+  }
+});
+
 test('checkout accepts an order without a delivery address and derives one for Ecotrack', () => {
   const reference = createOrder({ customer:{customer:'اختبار العنوان الاختياري',phone:'0555555555'}, items:[{id:'plague',qty:1}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} });
   assert.match(reference, /^GZ-/);
