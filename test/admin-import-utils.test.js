@@ -33,6 +33,15 @@ test('bulk import keeps same-title editions separate by publisher', () => {
   ]);
 });
 
+test('publisher identifies an edition when author spelling differs', () => {
+  const books = [
+    { id:'zarad-jamal',title:'هكذا تكلم زرادشت',author:'فريدريك نيتشه',publisher:'منشورات الجمل' },
+    { id:'zarad-rafidain',title:'هكذا تكلم زرادشت',author:'نيتشه',publisher:'دار الرافدين' }
+  ];
+  assert.equal(findBookMatch(books,{title:'هكذا تكلم زرادشت',author:'نيتشه',publisher:'منشورات الجمل'}).id,'zarad-jamal');
+  assert.deepEqual(findPriceBookMatches(books,{title:'هكذا تكلم زرادشت',author:'نيتشه',publisher:'منشورات الجمل'}).map(book=>book.id),['zarad-jamal']);
+});
+
 test('bulk import does not let a conflicting ISBN override the publisher match', () => {
   const existing = { id:'zarad-jamal',title:'هكذا تكلم زرادشت',author:'فريدريك نيتشه',publisher:'منشورات الجمل',isbn:'9781111111111' };
   assert.equal(findBookMatch([existing],{

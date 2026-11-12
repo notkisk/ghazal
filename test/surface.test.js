@@ -15,7 +15,8 @@ test('storefront keeps mobile checkout and responsive shelf behavior', () => {
   assert.match(html, /name="commune"/);
   assert.match(html, /name="shipmentType"/);
   assert.doesNotMatch(html, /name="phone2"/);
-  assert.doesNotMatch(html, /name="address"/);
+  assert.match(html, /name="address"[^>]*\/>/);
+  assert.match(html, /العنوان التفصيلي \(اختياري\)/);
   assert.doesNotMatch(html, /name="mapLink"/);
   assert.doesNotMatch(html, /name="notes"/);
   assert.match(html, /catalog-publisher-filter/);
@@ -131,11 +132,11 @@ test('homepage best sellers use confirmed orders and a stable carousel fallback'
 test('cache-busting versions match the latest edited assets', () => {
   const index = read('index.html');
   const adminHtml = read('admin.html');
-  assert.match(index, /script\.js\?v=20261111-1/);
+  assert.match(index, /script\.js\?v=20261112-2/);
   assert.match(index, /enhancements\.css\?v=20261110-7/);
   assert.match(index, /api\.js\?v=20261112-1/);
-  assert.match(adminHtml, /admin-import-utils\.js\?v=20261112-3/);
-  assert.match(adminHtml, /admin\.js\?v=20261112-4/);
+  assert.match(adminHtml, /admin-import-utils\.js\?v=20261112-4/);
+  assert.match(adminHtml, /admin\.js\?v=20261112-5/);
   assert.match(adminHtml, /admin-inventory-export\.js\?v=20261110-3/);
   assert.match(adminHtml, /admin-sales-export\.js\?v=20261110-1/);
   assert.match(read('admin.js'), /data-receive-book-stock/);

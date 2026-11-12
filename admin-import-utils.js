@@ -12,12 +12,19 @@
     const title = normalizeImportText(values.title);
     const author = normalizeImportText(values.author);
     const publisher = normalizeImportText(values.publisher);
+    const titleMatches = title
+      ? books.filter(book => normalizeImportText(book.title) === title)
+      : [];
     const titleAuthorMatches = title && author
       ? books.filter(book => normalizeImportText(book.title) === title && normalizeImportText(book.author) === author)
       : [];
     if (publisher) {
-      const publisherMatches = titleAuthorMatches.filter(book => normalizeImportText(book.publisher) === publisher);
+      const publisherMatches = titleMatches.filter(book => normalizeImportText(book.publisher) === publisher);
       if (publisherMatches.length === 1) return publisherMatches[0];
+      if (author) {
+        const publisherAuthorMatches = publisherMatches.filter(book => normalizeImportText(book.author) === author);
+        if (publisherAuthorMatches.length === 1) return publisherAuthorMatches[0];
+      }
     }
     if (isbn) {
       const isbnMatches = books.filter(book => normalizeIsbn(book.isbn) === isbn);
@@ -56,9 +63,14 @@
     if (!title) return [];
     const author = normalizeImportText(values.author);
     const publisher = normalizeImportText(values.publisher);
-    return books.filter(book => normalizeImportText(book.title) === title
-      && (!author || normalizeImportText(book.author) === author)
-      && (!publisher || normalizeImportText(book.publisher) === publisher));
+    const titleMatches = books.filter(book => normalizeImportText(book.title) === title);
+    if (publisher) {
+      const publisherMatches = titleMatches.filter(book => normalizeImportText(book.publisher) === publisher);
+      if (publisherMatches.length <= 1 || !author) return publisherMatches;
+      const authorMatches = publisherMatches.filter(book => normalizeImportText(book.author) === author);
+      return authorMatches.length ? authorMatches : publisherMatches;
+    }
+    return titleMatches.filter(book => !author || normalizeImportText(book.author) === author);
   }
 
   function parseDzdPrice(value) {

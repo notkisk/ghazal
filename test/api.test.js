@@ -116,11 +116,15 @@ test('bulk price updates change only existing book prices', async () => {
   }
 });
 
-test('checkout accepts an order without a delivery address and derives one for Ecotrack', () => {
+test('checkout accepts an optional free-text address and exports it with the commune', () => {
   const reference = createOrder({ customer:{customer:'اختبار العنوان الاختياري',phone:'0555555555'}, items:[{id:'plague',qty:1}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} });
   assert.match(reference, /^GZ-/);
   const view = orderView(db.prepare('SELECT * FROM orders WHERE reference=?').get(reference));
   assert.match(view.ecotrackRow['adresse de livraison*'], /Alger Centre/);
+  const withAddress = createOrder({ customer:{customer:'اختبار عنوان إضافي',phone:'0555555555',address:'حي النخيل، شارع 12'}, items:[{id:'plague',qty:1}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} });
+  const addressedView = orderView(db.prepare('SELECT * FROM orders WHERE reference=?').get(withAddress));
+  assert.equal(addressedView.customer.address,'حي النخيل، شارع 12');
+  assert.match(addressedView.ecotrackRow['adresse de livraison*'], /^حي النخيل، شارع 12،/);
 });
 
 test('checkout ignores client shipping prices and applies database discounts', () => {
