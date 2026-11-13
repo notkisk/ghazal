@@ -75,9 +75,14 @@ test('checkout accepts the canonical commune id from the selector', () => {
   assert.match(reference, /^GZ-/);
 });
 
+test('checkout only allows Stop Desk in carrier-listed communes', () => {
+  assert.doesNotThrow(() => createOrder({customer:{customer:'اختبار المكتب',phone:'0555555555'},items:[{id:'stranger',qty:1}],shipping:{type:'office',wilayaCode:16,commune:'Alger Centre'}}));
+  assert.throws(() => createOrder({customer:{customer:'اختبار المكتب',phone:'0555555555'},items:[{id:'stranger',qty:1}],shipping:{type:'office',wilayaCode:16,commune:'Hydra'}}), /stop_desk_unavailable/);
+});
+
 test('admin order edits persist added books and custom unit prices in totals', async () => {
   const reference=createOrder({ customer:{customer:'تعديل الطلب',phone:'0555555555'},items:[{id:'stranger',qty:1}],shipping:{type:'home',wilayaCode:16,commune:'Alger Centre'} });
-  const base=await listen(), token=await ownerToken(base), commune=require('../data/algeria-communes-58-wilayas.json').find(item=>item.wilaya_code==='16');
+  const base=await listen(), token=await ownerToken(base), commune=require('../data/algeria-communes-58-wilayas.json').find(item=>item.wilaya_code==='16'&&item.commune_name_ascii==='Alger Centre');
   try {
   const response=await fetch(`${base}/api/admin/orders/${encodeURIComponent(reference)}`,{method:'PUT',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({customer:{customer:'تعديل الطلب',phone:'0555555555',address:'',wilayaCode:16,wilaya:'Alger',communeId:commune.id},items:[{id:'stranger',qty:1,unit_price:2450},{id:'world-yesterday',qty:2,unit_price:1700}]})});
   assert.equal(response.status,200);
@@ -93,6 +98,12 @@ test('admin order edits persist added books and custom unit prices in totals', a
   assert.equal(cleared.discount,0);
   assert.equal(cleared.coupon_code,'');
   assert.equal(cleared.total,6450);
+  const changedShipping=await fetch(`${base}/api/admin/orders/${encodeURIComponent(reference)}`,{method:'PUT',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({customer:{customer:'تعديل الطلب',phone:'0555555555',address:'',wilayaCode:16,wilaya:'Alger',communeId:commune.id},items:[{id:'stranger',qty:1,unit_price:2450},{id:'world-yesterday',qty:2,unit_price:1700}],shipmentType:'office'})});
+  assert.equal(changedShipping.status,200);
+  const officeOrder=(await changedShipping.json()).order;
+  assert.equal(officeOrder.shipment_type,'office');
+  assert.equal(officeOrder.delivery,400);
+  assert.equal(officeOrder.total,6250);
   } finally {
     db.prepare('DELETE FROM orders WHERE reference=?').run(reference);
     await closeServer();
@@ -112,6 +123,34 @@ test('bulk price updates change only existing book prices', async () => {
   } finally {
     db.prepare('UPDATE books SET price=1900 WHERE id=?').run('stranger');
     db.prepare('UPDATE books SET price=2600 WHERE id=?').run('world-yesterday');
+    await closeServer();
+  }
+});
+
+test('bulk stock receipt adds purchases while physical count adjustments preserve sales and purchases', async () => {
+  const id=`bulk-restock-${Date.now()}`,stamp=new Date().toISOString();
+  db.prepare('INSERT INTO books (id,title,author,publisher,category,genre,price,stock,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(id,'كتاب توريد جماعي','كاتب الاختبار','دار الاختبار','literature','رواية',1000,5,'',stamp,stamp);
+  const reference=createOrder({customer:{customer:'اختبار التوريد',phone:'0555555555'},items:[{id,qty:1}],shipping:{type:'office',wilayaCode:16,commune:'Alger Centre'}});
+  transitionOrder(reference,'confirmed');
+  const base=await listen(),token=await ownerToken(base);
+  try {
+    const before=inventoryReportRows().find(book=>book.id===id);
+    const added=await fetch(`${base}/api/admin/restock-bulk`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({mode:'add',updates:[{id,quantity:3}]})});
+    assert.equal(added.status,200);
+    const afterAdd=inventoryReportRows().find(book=>book.id===id);
+    assert.deepEqual([afterAdd.stock,afterAdd.purchased,afterAdd.sold],[7,before.purchased+3,before.sold]);
+    const counted=await fetch(`${base}/api/admin/restock-bulk`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({mode:'set',updates:[{id,quantity:6}]})});
+    assert.equal(counted.status,200);
+    const afterCount=inventoryReportRows().find(book=>book.id===id);
+    assert.deepEqual([afterCount.stock,afterCount.purchased,afterCount.sold],[6,afterAdd.purchased,afterAdd.sold]);
+    db.prepare('UPDATE books SET reserved=2 WHERE id=?').run(id);
+    const unsafe=await fetch(`${base}/api/admin/restock-bulk`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({mode:'set',updates:[{id,quantity:1}]})});
+    assert.equal(unsafe.status,409);
+    assert.equal(db.prepare('SELECT stock FROM books WHERE id=?').get(id).stock,6);
+  } finally {
+    db.prepare('DELETE FROM orders WHERE reference=?').run(reference);
+    db.prepare('DELETE FROM restocks WHERE book_id=?').run(id);
+    db.prepare('DELETE FROM books WHERE id=?').run(id);
     await closeServer();
   }
 });

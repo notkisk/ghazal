@@ -5,6 +5,14 @@ const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { DatabaseSync } = require('node:sqlite');
 const communes = require(path.join(__dirname, 'data/algeria-communes-58-wilayas.json'));
+// Ecotrack Stop Desk locations supplied by the carrier. Match normalized
+// commune names so Arabic/Latin spelling and accents in the source data work.
+const stopDeskLocations = [
+  [1,'Adrar'],[2,'Chlef'],[2,'Tenes'],[3,'Laghouat'],[3,'Aflou'],[4,'Oum El Bouaghi'],[4,'Ain Fekroune'],[4,"Ain M'lila"],[5,'Batna'],[5,'Oued Chaaba'],[5,'Barika'],[6,'Bejaia'],[6,'Akbou'],[6,'El Kseur'],[7,'Biskra'],[8,'Bechar'],[9,'Blida'],[9,'Boufarik'],[9,'El Affroun'],[9,'Ouled Yaich'],[10,'Bouira'],[10,'Lakhdaria'],[11,'Tamanrasset'],[12,'Tebessa'],[12,'Cheria'],[13,'Tlemcen'],[13,'Maghnia'],[14,'Tiaret'],[15,'Tizi Ouzou'],[15,'Boghni'],[15,'Draa Ben Khedda'],[16,'Kouba'],[16,'Cheraga'],[16,'Oued Smar'],[16,'Reghaia'],[16,'Alger Centre'],[16,'Bab El Oued'],[16,'Ain Benian'],[16,'Draria'],[16,'Bordj El Bahri'],[16,'Les Eucalyptus'],[16,'Dely Ibrahim'],[16,'Djasr Kasentina'],[16,'Rouiba'],[16,'Maalma'],[16,'Bab Ezzouar'],[16,'Bir Touta'],[17,'Djelfa'],[17,'Ain Oussera'],[18,'Jijel'],[19,'El Eulma'],[19,'Setif'],[19,'Ain Oulmane'],[19,'Ain Azel'],[19,'Ain Arnat'],[20,'Saida'],[21,'Skikda'],[21,'Collo'],[22,'Sidi Bel Abbes'],[22,'Telagh'],[23,'Annaba'],[23,'El Bouni'],[23,'Seraidi'],[24,'Guelma'],[25,'El Khroub'],[25,'Didouche Mourad'],[26,'Medea'],[26,'Ksar El Boukhari'],[27,'Hadjadj'],[27,'Mostaganem'],[28,"M'Sila"],[28,'Bou Saada'],[29,'Sig'],[29,'Mascara'],[30,'Ouargla'],[30,'Hassi Messaoud'],[31,'Oran'],[31,'Bir El Djir'],[31,'Es Senia'],[31,'Mers El Kebir'],[31,'Ain Turk'],[31,'Arzew'],[32,'El Bayadh'],[33,'Illizi'],[33,'In Amenas'],[34,'Bordj Bou Arreridj'],[35,'Boumerdes'],[35,'Bordj Menaiel'],[35,'Dellys'],[35,'Boudouaou'],[36,'El Tarf'],[38,'Tissemsilt'],[38,'Bordj Bounaama'],[39,'El Oued'],[40,'Khenchela'],[41,'Souk Ahras'],[42,'Tipaza'],[42,'Hadjout'],[42,'Kolea'],[42,'Cherchell'],[43,'Mila'],[43,'Chelghoum Laid'],[43,'Ferdjioua'],[44,'Ain Defla'],[44,'Khemis Miliana'],[45,'Mecheria'],[46,'Ain Temouchent'],[46,'Beni Saf'],[47,'Ghardaia'],[48,'Relizane'],[48,'Oued Rhiou'],[49,'Timimoun'],[51,'Ouled Djellal'],[53,'In Salah'],[55,'Touggourt'],[56,'Djanet'],[57,"El M'Ghair"],[58,'El Meniaa']
+];
+const normalizeCommune = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const stopDeskKeys = new Set(stopDeskLocations.map(([code,name]) => `${code}:${normalizeCommune(name)}`));
+function hasStopDesk(wilayaCode, commune) { return stopDeskKeys.has(`${Number(wilayaCode)}:${normalizeCommune(commune?.commune_name_ascii || commune?.commune_name || commune)}`); }
 
 const ROOT = __dirname;
 const DATA_DIR = process.env.GHAZAL_DATA_DIR || path.join(ROOT, '.data');
@@ -333,7 +341,7 @@ function seedOpeningStockLedger() {
       LEFT JOIN (SELECT book_id,SUM(quantity) returned FROM restocks WHERE reason='customer_return' GROUP BY book_id) r ON r.book_id=b.id`).all();
     const soldByBook = new Map(soldRows.map(row => [row.book_id, Number(row.sold) || 0]));
     const books = db.prepare('SELECT id,stock FROM books').all();
-    const priorPurchases = db.prepare("SELECT COALESCE(SUM(quantity),0) quantity FROM restocks WHERE book_id=? AND reason<>'customer_return'");
+    const priorPurchases = db.prepare("SELECT COALESCE(SUM(quantity),0) quantity FROM restocks WHERE book_id=? AND reason NOT IN ('customer_return','stock_adjustment')");
     const addOpeningStock = db.prepare("INSERT INTO restocks (book_id,quantity,reason,created_at) VALUES (?,?,?,?)");
     for (const book of books) {
       const alreadySeeded = db.prepare("SELECT 1 FROM restocks WHERE book_id=? AND reason='opening_stock' LIMIT 1").get(book.id);
@@ -478,7 +486,7 @@ function inventoryReportRows() {
       COALESCE(p.purchased,0) purchased,
       MAX(0,COALESCE(s.units,0)-COALESCE(r.returned,0)) sold
     FROM books b
-    LEFT JOIN (SELECT book_id,SUM(quantity) purchased FROM restocks WHERE reason<>'customer_return' GROUP BY book_id) p ON p.book_id=b.id
+    LEFT JOIN (SELECT book_id,SUM(quantity) purchased FROM restocks WHERE reason NOT IN ('customer_return','stock_adjustment') GROUP BY book_id) p ON p.book_id=b.id
     LEFT JOIN (SELECT book_id,SUM(qty) units FROM reservations WHERE settled_at IS NOT NULL GROUP BY book_id) s ON s.book_id=b.id
     LEFT JOIN (SELECT book_id,SUM(quantity) returned FROM restocks WHERE reason='customer_return' GROUP BY book_id) r ON r.book_id=b.id
     ORDER BY b.title`).all();
@@ -564,9 +572,10 @@ function validateOrder(body) {
   const wilayaCode = String(body.shipping.wilayaCode).padStart(2, '0');
   const communeId = Number(body.shipping.communeId);
   const normalizedCommune = String(body.shipping.commune).trim().toLocaleLowerCase();
-  const validCommune = (Number.isInteger(communeId) && communes.some(item => item.wilaya_code === wilayaCode && Number(item.id) === communeId)) || communes.some(item => item.wilaya_code === wilayaCode && [item.commune_name_ascii, item.commune_name].some(name => String(name).trim().toLocaleLowerCase() === normalizedCommune));
+  const validCommune = (Number.isInteger(communeId) && communes.find(item => item.wilaya_code === wilayaCode && Number(item.id) === communeId)) || communes.find(item => item.wilaya_code === wilayaCode && [item.commune_name_ascii, item.commune_name].some(name => String(name).trim().toLocaleLowerCase() === normalizedCommune));
   if (!validCommune) throw new Error('invalid_commune');
   if (!['home', 'office'].includes(body.shipping.type)) throw new Error('invalid_shipment_type');
+  if (body.shipping.type === 'office' && !hasStopDesk(wilayaCode, validCommune)) throw new Error('stop_desk_unavailable');
   if (!deliveryRates[body.shipping.wilayaCode]?.[body.shipping.type]) throw new Error('invalid_shipping');
   for (const item of body.items) if (!item.id || !Number.isInteger(item.qty) || item.qty < 1 || item.qty > 100) throw new Error('invalid_item');
 }
@@ -651,6 +660,7 @@ async function api(req, res, url) {
   res._ghazalGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] || '').toLowerCase());
   try {
     if (req.method === 'GET' && url.pathname === '/api/health') return send(res, 200, { ok:true, service:'ghazal', time:now(), checks:{ database:Boolean(db.prepare('SELECT 1').get()) } });
+    if (req.method === 'GET' && url.pathname === '/api/shipping-options') return send(res,200,{stopDeskCommuneIds:communes.filter(item=>hasStopDesk(item.wilaya_code,item)).map(item=>Number(item.id))});
     const limited = req.method === 'POST' && url.pathname === '/api/auth/login' ? rateLimit(req, 'login', 10, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/auth/signup' ? rateLimit(req, 'signup', 3, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/orders' ? rateLimit(req, 'orders', 60, 60 * 60e3) : req.method === 'GET' && url.pathname === '/api/orders/lookup' ? rateLimit(req, 'order-lookup', 30, 15 * 60e3) : req.method === 'POST' && url.pathname === '/api/newsletter' ? rateLimit(req, 'newsletter', 5, 15 * 60e3) : 0;
     if (limited) return send(res, 429, { error:'rate_limited', retryAfter:limited }, { 'retry-after':String(limited) });
     if (req.method === 'GET' && url.pathname === '/api/auth/status') return send(res, 200, { setupAvailable: !db.prepare('SELECT 1 FROM users LIMIT 1').get() });
@@ -838,16 +848,42 @@ async function api(req, res, url) {
         const updatedItems=db.prepare('SELECT book_id id,qty,unit_price FROM order_items WHERE order_id=?').all(order.id);
         const subtotal=updatedItems.reduce((sum,item)=>sum+Number(item.qty)*Number(item.unit_price),0);
         const discount=order.coupon_code ? updatedItems.reduce((sum,item)=>sum+discountAmount({id:item.id,price:Number(item.unit_price)},order.coupon_code)*Number(item.qty),0) : Number(order.discount||0);
-        const delivery=deliveryRates[wilayaCode][customer.shipmentType||order.shipment_type]; Object.assign(customer,fields,{wilayaCode,wilaya:fields.wilaya,communeId,commune:commune.commune_name_ascii,communeArabic:commune.commune_name,city:commune.commune_name_ascii});
+        const shipmentType=body.shipmentType===undefined?(customer.shipmentType||order.shipment_type):String(body.shipmentType);
+        if(!['home','office'].includes(shipmentType))throw new Error('invalid_shipment_type');
+        if(shipmentType==='office'&&!hasStopDesk(wilayaCode,commune))throw new Error('stop_desk_unavailable');
+        const delivery=deliveryRates[wilayaCode][shipmentType]; Object.assign(customer,fields,{wilayaCode,wilaya:fields.wilaya,communeId,commune:commune.commune_name_ascii,communeArabic:commune.commune_name,city:commune.commune_name_ascii,shipmentType,price:delivery});
         const finalDiscount=Math.min(discount,subtotal);
         const totalAdjustment=body.total===undefined?Number(order.total_adjustment||0):Number(body.total)-(subtotal-finalDiscount+delivery);
         const finalTotal=Math.max(0,subtotal-finalDiscount+delivery+totalAdjustment);
-        db.prepare('UPDATE orders SET customer_json=?,subtotal=?,discount=?,delivery=?,total_adjustment=?,total=?,updated_at=? WHERE id=?').run(json(customer),subtotal,finalDiscount,delivery,totalAdjustment,finalTotal,now(),order.id);
+        db.prepare('UPDATE orders SET customer_json=?,subtotal=?,discount=?,delivery=?,shipment_type=?,total_adjustment=?,total=?,updated_at=? WHERE id=?').run(json(customer),subtotal,finalDiscount,delivery,shipmentType,totalAdjustment,finalTotal,now(),order.id);
         audit(user,'update','order',reference,{items:body.items,customer:fields,total:body.total});db.exec('COMMIT');
       } catch(error){db.exec('ROLLBACK');throw error;}
       return send(res,200,{ok:true,order:orderView(db.prepare('SELECT * FROM orders WHERE id=?').get(order.id))});
     }
     if (req.method === 'POST' && url.pathname === '/api/admin/restock') { if (!can(user,'edit_inventory')) return send(res,403,{error:'permission_denied',permission:'edit_inventory'}); const body = await readBody(req); const quantity = Number(body.quantity); if (!body.bookId || !Number.isInteger(quantity) || quantity < 1) return send(res,400,{error:'invalid_restock'}); const book = db.prepare('SELECT id FROM books WHERE id=?').get(body.bookId); if (!book) return send(res,404,{error:'not_found'}); db.prepare('UPDATE books SET stock=stock+?,updated_at=? WHERE id=?').run(quantity,now(),body.bookId); db.prepare('INSERT INTO restocks (book_id,quantity,reason,user_id,created_at) VALUES (?,?,?,?,?)').run(body.bookId,quantity,String(body.reason || 'restock'),user.id,now()); audit(user,'restock','book',body.bookId,{quantity,reason:body.reason}); return send(res,200,{ok:true}); }
+    if (req.method === 'POST' && url.pathname === '/api/admin/restock-bulk') {
+      if (!can(user,'edit_inventory')) return send(res,403,{error:'permission_denied',permission:'edit_inventory'});
+      const body = await readBody(req), mode = body.mode, updates = Array.isArray(body.updates) ? body.updates : [];
+      if (!['add','set'].includes(mode) || !updates.length || updates.length > 5000 || updates.some(item => !item || typeof item.id !== 'string' || !item.id.trim() || !Number.isInteger(item.quantity) || item.quantity < 0 || item.quantity > (mode === 'add' ? 1000000 : 1000000000) || (mode === 'add' && item.quantity < 1)) || new Set(updates.map(item => item.id)).size !== updates.length) return send(res,400,{error:'invalid_bulk_restock'});
+      const stamp = now(); db.exec('BEGIN IMMEDIATE');
+      try {
+        const selectBook = db.prepare('SELECT id,stock,reserved FROM books WHERE id=?');
+        const current = updates.map(item => ({ ...item, book:selectBook.get(item.id) }));
+        if (current.some(item => !item.book)) { db.exec('ROLLBACK'); return send(res,404,{error:'book_not_found'}); }
+        if (mode === 'set' && current.some(item => item.quantity < Number(item.book.reserved))) { db.exec('ROLLBACK'); return send(res,409,{error:'stock_below_reserved'}); }
+        if (current.some(item => (mode === 'add' ? Number(item.book.stock) + item.quantity : item.quantity) > 1000000000)) { db.exec('ROLLBACK'); return send(res,400,{error:'invalid_bulk_restock'}); }
+        const setStock = db.prepare('UPDATE books SET stock=?,updated_at=? WHERE id=?');
+        const addStock = db.prepare('UPDATE books SET stock=stock+?,updated_at=? WHERE id=?');
+        const movement = db.prepare('INSERT INTO restocks (book_id,quantity,reason,user_id,created_at) VALUES (?,?,?,?,?)');
+        for (const item of current) {
+          if (mode === 'add') { addStock.run(item.quantity,stamp,item.id); movement.run(item.id,item.quantity,'supplier_purchase',user.id,stamp); }
+          else { const delta = item.quantity - Number(item.book.stock); if (delta) { setStock.run(item.quantity,stamp,item.id); movement.run(item.id,delta,'stock_adjustment',user.id,stamp); } }
+        }
+        audit(user,'bulk_restock','book',null,{mode,count:current.length,quantity:current.reduce((sum,item)=>sum+(mode==='add'?item.quantity:Math.abs(item.quantity-Number(item.book.stock))),0)});
+        db.exec('COMMIT');
+        return send(res,200,{ok:true,updated:current.length,mode});
+      } catch (error) { db.exec('ROLLBACK'); throw error; }
+    }
     if (req.method === 'POST' && url.pathname === '/api/admin/exports') { if (user.role !== 'owner') return send(res,403,{error:'owner_only'}); const body = await readBody(req); if (!body.fingerprint || !Array.isArray(body.references) || !body.filename) return send(res,400,{error:'invalid_export'}); const notConfirmed = body.references.filter(reference => { const order = db.prepare('SELECT status FROM orders WHERE reference=?').get(reference); return !order || order.status !== 'confirmed'; }); if (notConfirmed.length) return send(res,409,{error:'unconfirmed_orders',references:notConfirmed}); const existing = db.prepare('SELECT id,filename,created_at FROM exports WHERE fingerprint=?').get(body.fingerprint); if (existing) return send(res,409,{error:'duplicate_export',export:existing}); db.prepare('INSERT INTO exports (fingerprint,order_refs_json,filename,user_id,created_at) VALUES (?,?,?,?,?)').run(body.fingerprint,json(body.references),body.filename,user.id,now()); audit(user,'export','orders',body.fingerprint,{references:body.references,filename:body.filename}); return send(res,201,{ok:true}); }
     if (req.method === 'GET' && url.pathname === '/api/admin/exports') return send(res,200,{exports:db.prepare('SELECT * FROM exports ORDER BY created_at DESC LIMIT 100').all()});
     if (req.method === 'GET' && url.pathname === '/api/admin/conversions') { if (user.role !== 'owner') return send(res,403,{error:'owner_only'}); return send(res,200,{events:db.prepare('SELECT * FROM conversion_events ORDER BY created_at DESC LIMIT 100').all()}); }

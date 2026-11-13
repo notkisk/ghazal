@@ -23,8 +23,8 @@ function readStoredZip(bytes) {
 
 test('inventory report uses current stock, reservations, sale prices, and correct totals', () => {
   const { records, total } = inventoryRows([
-    { title:'كتاب ب', author:'كاتب ب', publisher:'دار ب', purchased:4, sold:2, stock:2, reserved:0, price:700 },
-    { title:'كتاب أ', author:'كاتب أ', publisher:'دار أ', purchased:12, sold:5, stock:10, reserved:3, price:1500 }
+    { id:'book-b', title:'كتاب ب', author:'كاتب ب', publisher:'دار ب', purchased:4, sold:2, stock:2, reserved:0, price:700 },
+    { id:'book-a', title:'كتاب أ', author:'كاتب أ', publisher:'دار أ', purchased:12, sold:5, stock:10, reserved:3, price:1500 }
   ]);
 
   assert.equal(records[0].title, 'كتاب أ');
@@ -32,14 +32,18 @@ test('inventory report uses current stock, reservations, sale prices, and correc
   assert.deepEqual(total, { purchased:16, sold:7, stock:12, reserved:3, available:9, stockValue:16400, availableValue:11900 });
 
   const files = readStoredZip(createWorkbook([
-    { title:'كتاب أ', author:'كاتب أ', publisher:'دار أ', purchased:12, sold:5, stock:10, reserved:3, price:1500 },
-    { title:'كتاب ب', author:'كاتب ب', publisher:'دار ب', purchased:4, sold:2, stock:2, reserved:0, price:700 }
+    { id:'book-a', title:'كتاب أ', author:'كاتب أ', publisher:'دار أ', purchased:12, sold:5, stock:10, reserved:3, price:1500 },
+    { id:'book-b', title:'كتاب ب', author:'كاتب ب', publisher:'دار ب', purchased:4, sold:2, stock:2, reserved:0, price:700 }
   ]));
   assert.ok(files.has('xl/workbook.xml'));
   const sheet = files.get('xl/worksheets/sheet1.xml');
   assert.match(sheet, /سعر البيع \(دج\)/);
   assert.match(sheet, /النسخ المشتراة/);
   assert.match(sheet, /النسخ المباعة/);
+  assert.match(sheet, /معرّف الكتاب/);
+  assert.match(sheet, /كمية واردة للإضافة/);
+  assert.match(sheet, /الكمية النهائية بعد الجرد/);
+  assert.match(sheet, /book-a/);
   assert.match(sheet, /قيمة المخزون بسعر البيع \(دج\)/);
   assert.match(sheet, /<v>15000<\/v>/);
   assert.match(sheet, /<v>10500<\/v>/);
@@ -57,13 +61,13 @@ test('inventory report does not hide reservations or show negative available sto
 });
 
 test('inventory workbook includes clickable cover links only when requested', () => {
-  const book={title:'كتاب الأغلفة',image:'/covers/original.webp',display:'/covers/display.webp',thumb:'/covers/thumb.webp'};
+  const book={id:'cover-book',title:'كتاب الأغلفة',image:'/covers/original.webp',display:'/covers/display.webp',thumb:'/covers/thumb.webp'};
   const files=readStoredZip(createWorkbook([book],{includeCoverLinks:true,baseUrl:'http://localhost:3000'}));
   const sheet=files.get('xl/worksheets/sheet1.xml');
   assert.match(sheet,/رابط الغلاف الأصلي/);
   assert.match(sheet,/رابط صورة العرض/);
   assert.match(sheet,/رابط الصورة المصغرة/);
-  assert.match(sheet,/dimension ref="A1:N3"/);
+  assert.match(sheet,/dimension ref="A1:Q3"/);
   assert.match(sheet,/<hyperlinks>/);
   const relationships=files.get('xl/worksheets/_rels/sheet1.xml.rels');
   assert.match(relationships,/Target="http:\/\/localhost:3000\/covers\/original\.webp"/);

@@ -29,6 +29,7 @@ window.GhazalAPI = (() => {
     adminInventoryReport: (token) => request('/api/admin/inventory-report', { headers: { authorization: `Bearer ${token}` } }),
     adminSalesReport: (token, { from = '', to = '', scope = 'all' } = {}) => { const query = new URLSearchParams({ from, to, scope }); return request(`/api/admin/sales-report?${query}`, { headers:{ authorization:`Bearer ${token}` } }); },
     restockBook: (token, bookId, quantity) => request('/api/admin/restock', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ bookId, quantity, reason:'supplier_purchase' }) }),
+    restockBooksBulk: (token, mode, updates) => request('/api/admin/restock-bulk', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ mode, updates }) }),
     saveCatalog: (token, catalog) => request('/api/admin/catalog', { method:'PUT', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(catalog) }),
     cacheImageUrl: (token, url) => request('/api/admin/cache-image', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify({ url }) }),
     saveCover: (token, cover) => request('/api/admin/covers', { method:'POST', headers:{ authorization:`Bearer ${token}` }, body:JSON.stringify(cover), timeout:30000 }),

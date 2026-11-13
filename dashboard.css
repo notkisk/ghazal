@@ -115,3 +115,5 @@ body[data-role="admin"] [data-owner-finance],body[data-role="admin"] .dashboard-
 .order-book-line>button{grid-column:5;grid-row:1}
 .order-delete{width:auto!important;min-width:0!important;justify-self:start;padding:6px 12px!important;color:#a12626!important;border:1px solid #c66!important;background:#fff7f5!important;flex:0 0 auto!important}
 @media(max-width:700px){.order-edit-fields{grid-template-columns:1fr 1fr}.order-book-line{grid-template-columns:48px minmax(0,1fr) 54px 72px auto;gap:6px}.order-line-cover{width:48px;height:66px}.order-book-line label{font-size:9px}.order-book-line label input{padding:7px 4px}.order-coupon{grid-template-columns:1fr}.order-coupon h4,.order-coupon small{grid-column:1}.order-total-lines{grid-template-columns:1fr 1fr}.order-total-lines>label{align-items:flex-start;flex-direction:column}}
+.order-shipment-badge { display:inline-flex; align-items:center; border:1px solid #c7d9d1; border-radius:999px; padding:2px 9px; margin-inline-start:6px; color:#245b48; background:#edf6f1; font-size:.78rem; font-weight:700; }
+.delivery-note { display:block; margin:.4rem 0 1rem; color:#755a18; }

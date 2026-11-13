@@ -6,7 +6,7 @@
   const MAIN_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
   const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
   const PKG_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
-  const baseHeaders = ['عنوان الكتاب','المؤلف','دار النشر','النسخ المشتراة','النسخ المباعة','المتبقي بالمخزون','الكمية المحجوزة','المتاح للبيع','سعر البيع (دج)','قيمة المخزون بسعر البيع (دج)','قيمة المتاح للبيع (دج)'];
+  const baseHeaders = ['عنوان الكتاب','المؤلف','دار النشر','النسخ المشتراة','النسخ المباعة','المتبقي بالمخزون','الكمية المحجوزة','المتاح للبيع','سعر البيع (دج)','قيمة المخزون بسعر البيع (دج)','قيمة المتاح للبيع (دج)','معرّف الكتاب','كمية واردة للإضافة','الكمية النهائية بعد الجرد'];
   const coverHeaders = ['رابط الغلاف الأصلي','رابط صورة العرض','رابط الصورة المصغرة'];
 
   const xmlEscape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;' }[character]));
@@ -33,7 +33,7 @@
       const purchased = Math.trunc(safeNumber(book.purchased));
       const sold = Math.trunc(safeNumber(book.sold));
       const price = Math.trunc(safeNumber(book.price));
-      const record = { title:String(book.title || ''), author:String(book.author || ''), publisher:String(book.publisher || ''), purchased, sold, stock, reserved, available, price, stockValue:stock * price, availableValue:available * price };
+      const record = { id:String(book.id || ''), title:String(book.title || ''), author:String(book.author || ''), publisher:String(book.publisher || ''), purchased, sold, stock, reserved, available, price, stockValue:stock * price, availableValue:available * price };
       if (includeCoverLinks) Object.assign(record, { coverImage:coverLink(book.image,baseUrl), coverDisplay:coverLink(book.display,baseUrl), coverThumb:coverLink(book.thumb,baseUrl) });
       return record;
     }).sort((a, b) => a.title.localeCompare(b.title, 'ar'));
@@ -73,7 +73,7 @@
     const includeCoverLinks = Boolean(options.includeCoverLinks);
     const headers = includeCoverLinks ? [...baseHeaders,...coverHeaders] : baseHeaders;
     const { records, total } = inventoryRows(books, options);
-    const rows = [headers, ...records.map(book => [book.title,book.author,book.publisher,book.purchased,book.sold,book.stock,book.reserved,book.available,book.price,book.stockValue,book.availableValue,...(includeCoverLinks?[book.coverImage,book.coverDisplay,book.coverThumb]:[])]), ['الإجمالي','','',total.purchased,total.sold,total.stock,total.reserved,total.available,'',total.stockValue,total.availableValue,...(includeCoverLinks?['','','']:[])]];
+    const rows = [headers, ...records.map(book => [book.title,book.author,book.publisher,book.purchased,book.sold,book.stock,book.reserved,book.available,book.price,book.stockValue,book.availableValue,book.id,'','',...(includeCoverLinks?[book.coverImage,book.coverDisplay,book.coverThumb]:[])]), ['الإجمالي','','',total.purchased,total.sold,total.stock,total.reserved,total.available,'',total.stockValue,total.availableValue,'','','',...(includeCoverLinks?['','','']:[])]];
     const lastRow = rows.length; const lastDataRow = Math.max(1, lastRow - 1);
     const hyperlinks = [];
     const sheetRows = rows.map((row, rowIndex) => {
@@ -81,13 +81,13 @@
       const cells = row.map((value, colIndex) => {
         const reference = `${columnName(colIndex)}${rowNumber}`; const numeric = !isHeader && typeof value === 'number';
         const style = isHeader ? ' s="1"' : (isTotal ? (colIndex >= 9 && colIndex <= 10 ? ' s="5"' : ' s="2"') : (numeric && colIndex >= 8 && colIndex <= 10 ? ' s="3"' : (numeric ? ' s="4"' : '')));
-        if (includeCoverLinks && !isHeader && !isTotal && colIndex >= 11 && colIndex <= 13 && /^https?:\/\//i.test(String(value || ''))) hyperlinks.push({ ref:reference, id:`rId${hyperlinks.length+1}`, target:String(value) });
+        if (includeCoverLinks && !isHeader && !isTotal && colIndex >= 14 && colIndex <= 16 && /^https?:\/\//i.test(String(value || ''))) hyperlinks.push({ ref:reference, id:`rId${hyperlinks.length+1}`, target:String(value) });
         return numeric ? `<c r="${reference}"${style} t="n"><v>${value}</v></c>` : `<c r="${reference}"${style} t="inlineStr"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`;
       }).join('');
       return `<row r="${rowNumber}"${isHeader ? ' ht="30" customHeight="1"' : ''}>${cells}</row>`;
     }).join('');
     const lastColumn = columnName(headers.length - 1);
-    const coverWidths = includeCoverLinks ? '<col min="12" max="14" width="46" customWidth="1"/>' : '';
+    const coverWidths = includeCoverLinks ? '<col min="15" max="17" width="46" customWidth="1"/>' : '';
     const hyperlinkXml = hyperlinks.length ? `<hyperlinks>${hyperlinks.map(link=>`<hyperlink ref="${link.ref}" r:id="${link.id}"/>`).join('')}</hyperlinks>` : '';
     const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${MAIN_NS}" xmlns:r="${REL_NS}"><dimension ref="A1:${lastColumn}${lastRow}"/><sheetViews><sheetView workbookViewId="0" rightToLeft="1"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="20"/><cols><col min="1" max="1" width="34" customWidth="1"/><col min="2" max="3" width="24" customWidth="1"/><col min="4" max="8" width="17" customWidth="1"/><col min="9" max="11" width="27" customWidth="1"/>${coverWidths}</cols><sheetData>${sheetRows}</sheetData><autoFilter ref="A1:${lastColumn}${lastDataRow}"/>${hyperlinkXml}</worksheet>`;
     const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${MAIN_NS}"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0 &quot;دج&quot;"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF173D45"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEAF1EF"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FF9CB2AD"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="164" fontId="2" fillId="3" borderId="1" xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
