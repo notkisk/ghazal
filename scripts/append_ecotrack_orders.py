@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import unicodedata
 from copy import deepcopy
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -37,6 +38,63 @@ COLUMNS = [
     "STOP DESK\n( si oui mettez OUI sinon laissez vide )", "Lien map",
 ]
 
+ROOT = Path(__file__).resolve().parents[1]
+LOCATION_DATA = json.loads((ROOT / "data/ecotrack-locations.json").read_text(encoding="utf-8"))
+LEGACY_COMMUNES = json.loads((ROOT / "data/algeria-communes-58-wilayas.json").read_text(encoding="utf-8"))
+
+
+def normalize_location(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(character.lower() for character in text if character.isalnum())
+
+
+def limit_ecotrack_product_text(value: object) -> str:
+    text = str(value or "")
+    return text if len(text) <= 254 else text[:253] + "…"
+
+
+def canonicalize_location(row: dict[str, object]) -> None:
+    try:
+        code = str(int(str(row.get("code wilaya*", "")).strip())).zfill(2)
+    except ValueError as error:
+        raise ValueError(f"invalid Ecotrack wilaya code: {row.get('code wilaya*')!r}") from error
+    wilaya = LOCATION_DATA["wilayas"].get(code)
+    if not wilaya:
+        raise ValueError(f"unknown Ecotrack wilaya code: {code}")
+
+    commune_lookup = {
+        (entry["wilaya_code"], normalize_location(entry["name"])): entry["name"]
+        for entry in LOCATION_DATA["communes"]
+    }
+    commune_lookup.update({
+        (entry["wilaya_code"], normalize_location(entry["source"])): entry["target"]
+        for entry in LOCATION_DATA.get("aliases", [])
+    })
+    raw_commune = row.get("commune de livraison*") or ""
+    commune = commune_lookup.get((code, normalize_location(raw_commune)))
+    if not commune:
+        legacy = next((entry for entry in LEGACY_COMMUNES
+                       if entry["wilaya_code"] == code and normalize_location(raw_commune) in {
+                           normalize_location(entry["commune_name_ascii"]),
+                           normalize_location(entry["commune_name"]),
+                       }), None)
+        if legacy:
+            commune = commune_lookup.get((code, normalize_location(legacy["commune_name_ascii"])))
+    if not commune:
+        raise ValueError(f"commune {raw_commune!r} in wilaya {code} is not in the Ecotrack reference list")
+
+    row["code wilaya*"] = str(int(code))
+    row["wilaya de livraison"] = wilaya
+    row["commune de livraison*"] = commune
+    address = str(row.get("adresse de livraison*") or "")
+    for entry in LEGACY_COMMUNES:
+        if entry["wilaya_code"] == code and normalize_location(raw_commune) in {
+            normalize_location(entry["commune_name_ascii"]), normalize_location(entry["commune_name"])
+        }:
+            address = address.replace(entry["commune_name"], commune).replace(entry["commune_name_ascii"], commune)
+    row["adresse de livraison*"] = address
+    row["RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )"] = ""
+
 
 def col_name(number: int) -> str:
     result = ""
@@ -56,7 +114,10 @@ def as_rows(path: Path) -> list[dict[str, object]]:
         row = row if isinstance(row, dict) else item
         if not isinstance(row, dict):
             raise ValueError("each order must be a row object or contain ecotrackRow")
-        rows.append({column: row.get(column, "") for column in COLUMNS})
+        normalized_row = {column: row.get(column, "") for column in COLUMNS}
+        normalized_row["produit*"] = limit_ecotrack_product_text(normalized_row["produit*"])
+        canonicalize_location(normalized_row)
+        rows.append(normalized_row)
     return rows
 
 

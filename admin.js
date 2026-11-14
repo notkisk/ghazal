@@ -109,6 +109,7 @@ let priceUpdateRows = [];
 let priceUpdateMapping = {};
 let priceUpdatePlan = [];
 const ECOTRACK_COLUMNS = ['reference commande','nom et prenom du destinataire*','telephone*','telephone 2','code wilaya*','wilaya de livraison','commune de livraison*','adresse de livraison*','produit*','poids (kg)','montant du colis*','remarque','FRAGILE\n( si oui mettez OUI sinon laissez vide )','ECHANGE\n( si oui mettez OUI sinon laissez vide )','PICK UP\n( si oui mettez OUI sinon laissez vide )','RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )','STOP DESK\n( si oui mettez OUI sinon laissez vide )','Lien map'];
+function limitEcotrackProductText(value) { const characters = Array.from(String(value ?? '')); return characters.length <= 254 ? characters.join('') : `${characters.slice(0, 253).join('')}…`; }
 let ownerTab = 'books';
 let collectionsLoaded = false;
 function refreshGenresFromBooks() {
@@ -1037,7 +1038,7 @@ function zipBytes(entries) {
   const centralSize = central.reduce((sum, item) => sum + item.length, 0); const end = new Uint8Array(22); const endView = new DataView(end.buffer); putU32(endView, 0, 0x06054b50); putU16(endView, 8, entries.length); putU16(endView, 10, entries.length); putU32(endView, 12, centralSize); putU32(endView, 16, offset); return new Blob([...chunks, ...central, end], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 const xmlEscape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;' }[character]));
-function workbookRows(exportable) { return exportable.map(order => { const row = order.ecotrackRow; return ECOTRACK_COLUMNS.map(column => row[column] ?? ''); }); }
+function workbookRows(exportable) { return exportable.map(order => { const row = order.ecotrackRow; return ECOTRACK_COLUMNS.map(column => column === 'produit*' ? limitEcotrackProductText(row[column]) : row[column] ?? ''); }); }
 function downloadEcotrackCsv(exportable) { const csvCell = value => `"${String(value ?? '').replace(/"/g, '""')}"`; const csv = [ECOTRACK_COLUMNS, ...workbookRows(exportable)].map(row => row.map(csvCell).join(',')).join('\r\n'); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type:'text/csv;charset=utf-8' })); link.download = `upload_ecotrack_v31-${new Date().toISOString().slice(0,10)}.csv`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); }
 async function exportBookInventory() {
   const button = $('[data-export-book-inventory]');
@@ -1080,6 +1081,8 @@ async function exportOrders() {
   const visible = filteredOrders().filter(order => order.status === 'confirmed' && order.ecotrackRow);
   const exportable = selectedOrderRefs.size ? visible.filter(order => selectedOrderRefs.has(order.reference)) : visible;
   if (!exportable.length) return alert(selectedOrderRefs.size ? 'لا توجد طلبات محددة جاهزة للتصدير ضمن نطاق التاريخ.' : 'لا توجد طلبات Ecotrack جاهزة للتصدير ضمن نطاق التاريخ.');
+  const invalidLocations = exportable.filter(order => !order.ecotrackLocationValid || !order.ecotrackRow['code wilaya*'] || !order.ecotrackRow['wilaya de livraison'] || !order.ecotrackRow['commune de livraison*']);
+  if (invalidLocations.length) return alert(`تعذر التصدير لأن اسم الولاية أو البلدية غير موجود حرفيًا في قائمة Ecotrack لهذه الطلبات:\n${invalidLocations.map(order => order.reference).join('، ')}\nتحقق من موقع الطلب ومطابقته لقائمة المراجع قبل إعادة التصدير.`);
   try {
     let templateBuffer;
     if (window.GHAZAL_ECOTRACK_TEMPLATE_BASE64) {

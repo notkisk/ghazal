@@ -75,9 +75,22 @@ test('checkout accepts the canonical commune id from the selector', () => {
   assert.match(reference, /^GZ-/);
 });
 
-test('checkout only allows Stop Desk in carrier-listed communes', () => {
+test('checkout only allows Stop Desk in carrier-listed communes', async () => {
   assert.doesNotThrow(() => createOrder({customer:{customer:'اختبار المكتب',phone:'0555555555'},items:[{id:'stranger',qty:1}],shipping:{type:'office',wilayaCode:16,commune:'Alger Centre'}}));
   assert.throws(() => createOrder({customer:{customer:'اختبار المكتب',phone:'0555555555'},items:[{id:'stranger',qty:1}],shipping:{type:'office',wilayaCode:16,commune:'Hydra'}}), /stop_desk_unavailable/);
+  const bordj = require('../data/algeria-communes-58-wilayas.json').find(item => item.wilaya_code === '34' && item.commune_name_ascii === 'B. B. Arreridj');
+  const reference = createOrder({customer:{customer:'اختبار مكتب برج بوعريريج',phone:'0555555555'},items:[{id:'stranger',qty:1}],shipping:{type:'office',wilayaCode:34,communeId:bordj.id,commune:bordj.commune_name_ascii}});
+  const order = orderView(db.prepare('SELECT * FROM orders WHERE reference=?').get(reference));
+  assert.equal(order.ecotrackLocationValid, true);
+  assert.equal(order.ecotrackRow['wilaya de livraison'], 'Bordj Bou Arreridj');
+  assert.equal(order.ecotrackRow['commune de livraison*'], 'Bordj Bou Arreridj');
+  assert.equal(order.ecotrackRow['STOP DESK\n( si oui mettez OUI sinon laissez vide )'], 'OUI');
+  const base = await listen();
+  try {
+    const response = await fetch(`${base}/api/shipping-options`);
+    assert.equal(response.status, 200);
+    assert.ok((await response.json()).stopDeskCommuneIds.includes(bordj.id));
+  } finally { await closeServer(); }
 });
 
 test('admin order edits persist added books and custom unit prices in totals', async () => {
@@ -216,7 +229,17 @@ test('orders expose the Ecotrack row required by the exporter', () => {
   const view = orderView(order);
   assert.equal(view.ecotrackRow['reference commande'], reference);
   assert.equal(view.ecotrackRow['telephone*'], '0555555555');
+  assert.equal(view.ecotrackRow['RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )'], '');
   assert.equal(view.ecotrackRow['STOP DESK\n( si oui mettez OUI sinon laissez vide )'], 'OUI');
+});
+
+test('Ecotrack product text is capped at 254 characters including its ellipsis', () => {
+  const reference = createOrder({ customer:{customer:'اختبار طول المنتج',phone:'0555555555'}, items:[{id:'sophies-world',qty:1}], shipping:{type:'home',wilayaCode:16,commune:'Alger Centre',price:600} });
+  const order = db.prepare('SELECT * FROM orders WHERE reference=?').get(reference);
+  db.prepare('UPDATE order_items SET title=? WHERE order_id=?').run('عنوان طويل '.repeat(50), order.id);
+  const product = orderView(order).ecotrackRow['produit*'];
+  assert.equal(Array.from(product).length, 254);
+  assert.equal(product.endsWith('…'), true);
 });
 
 test('password hashes are salted and do not contain the plaintext', () => {

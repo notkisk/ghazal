@@ -228,6 +228,7 @@ const DEFAULT_COVER = 'assets/placeholder-cover.svg?v=20261103-2';
 const isDefaultCover = book => { const source = String(book?.thumb || book?.display || book?.image || '').trim(); return !source || source.includes('placeholder-cover.svg'); };
 const coverUrl = (book, size = 'thumb') => coverPath(size === 'display' ? (book?.display || book?.image) : (book?.thumb || book?.display || book?.image)) || DEFAULT_COVER;
 const money = value => `${new Intl.NumberFormat('ar-DZ-u-nu-latn').format(value)} د.ج`;
+const ecotrackProductText = value => { const characters = Array.from(String(value || '')); return characters.length <= 254 ? characters.join('') : `${characters.slice(0, 253).join('')}…`; };
 const wilayas = `1|Adrar|1100|500,2|Chlef|800|400,3|Laghouat|800|400,4|Oum El Bouaghi|700|400,5|Batna|650|400,6|Béjaïa|700|400,7|Biskra|650|400,8|Béchar|1050|400,9|Blida|750|400,10|Bouira|750|400,11|Tamanrasset|1050|400,12|Tébessa|650|400,13|Tlemcen|800|400,14|Tiaret|800|400,15|Tizi Ouzou|750|400,16|Alger|600|400,17|Djelfa|800|400,18|Jijel|700|400,19|Sétif|700|400,20|Saïda|800|400,21|Skikda|700|400,22|Sidi Bel Abbès|800|400,23|Annaba|700|400,24|Guelma|700|400,25|Constantine|700|400,26|Médéa|750|400,27|Mostaganem|800|400,28|M'Sila|750|400,29|Mascara|800|400,30|Ouargla|750|400,31|Oran|850|400,32|El Bayadh|1000|500,33|Illizi|1400|700,34|Bordj Bou Arreridj|700|400,35|Boumerdès|750|400,36|El Tarf|700|400,37|Tindouf|1400|700,38|Tissemsilt|850|450,39|El Oued|450|350,40|Khenchela|700|400,41|Souk Ahras|700|400,42|Tipaza|750|400,43|Mila|700|400,44|Aïn Defla|850|450,45|Naâma|950|500,46|Aïn Témouchent|850|450,47|Ghardaïa|850|400,48|Relizane|850|450,49|Timimoun|1050|550,50|Bordj Badji Mokhtar|1800|800,51|Ouled Djellal|650|550,52|Beni Abbes|1050|550,53|In Salah|1350|750,54|In Guezzam|1350|750,55|Touggourt|650|400,56|Djanet|1800|800,57|El M'Ghair|650|500,58|El Meniaa|950|550`.split(',').map(row => {
   const [code, name, home, office] = row.split('|').map((value, index) => index < 2 ? value : Number(value));
   const service = { home, office };
@@ -606,7 +607,7 @@ const shippingRate = (wilayaCode, shipmentType) => { const wilaya = wilayaByCode
 const selectedWilaya = code => wilayaByCode[Number(code)] || wilayaByCode[16];
 function updateShippingQuote() { const form = $('#checkout-form'); if (!form) return; const code = form.elements.wilayaCode.value; $('#home-shipping-price').textContent = `${money(shippingRate(code, 'home'))} — يصل إلى عنوانك`; $('#office-shipping-price').textContent = `${money(shippingRate(code, 'office'))} — استلام من المكتب`; }
 function updateStopDeskAvailability() { const form=$('#checkout-form'); if(!form)return; form.elements.commune.setCustomValidity(''); const commune=communes.find(item=>String(item.id)===String(form.elements.commune.value)); const available=Boolean(commune&&stopDeskCommuneIds.has(Number(commune.id))); const radio=form.querySelector('[name="shipmentType"][value="office"]'); const note=$('#office-shipping-note'); if(radio){radio.disabled=!available;if(!available&&radio.checked){form.querySelector('[name="shipmentType"][value="home"]').checked=true;}} if(note)note.textContent=commune&&!available?'لا يتوفر مكتب توصيل في هذه البلدية؛ اختر التوصيل للمنزل.':commune?'يتوفر مكتب توصيل في هذه البلدية.':'اختر البلدية لمعرفة توفر مكتب التوصيل.'; }
-function populateCommunes() { const form = $('#checkout-form'); const select = $('#commune-select'); if (!form || !select) return; const code = String(form.elements.wilayaCode.value).padStart(2, '0'); const matches = communes.filter(commune => commune.wilaya_code === code); select.innerHTML = matches.length ? `<option value="">اختر البلدية</option>${matches.map(commune => `<option value="${commune.id}">${commune.commune_name_ascii} — ${commune.commune_name} · ${commune.daira_name_ascii || commune.daira_name || ''}</option>`).join('')}` : '<option value="">تعذر تحميل البلديات</option>'; select.disabled = matches.length === 0; updateStopDeskAvailability(); }
+function populateCommunes() { const form = $('#checkout-form'); const select = $('#commune-select'); if (!form || !select) return; const code = String(form.elements.wilayaCode.value).padStart(2, '0'); const matches = communes.filter(commune => commune.wilaya_code === code); select.innerHTML = matches.length ? `<option value="">اختر البلدية</option>${matches.map(commune => `<option value="${commune.id}">${commune.commune_name} (${commune.commune_name_ascii})</option>`).join('')}` : '<option value="">تعذر تحميل البلديات</option>'; select.disabled = matches.length === 0; updateStopDeskAvailability(); }
 $('#checkout-form [name="commune"]').addEventListener('change',updateStopDeskAvailability);
 updateShippingQuote();
 populateCommunes();
@@ -688,14 +689,14 @@ $('#checkout-confirm').addEventListener('click', async () => {
     'wilaya de livraison': checkoutData.wilaya,
     'commune de livraison*': checkoutData.city,
     'adresse de livraison*': deliveryAddress,
-    'produit*': cart.map(({ id, qty }) => `${byId[id].title} x${qty}`).join(' + '),
+    'produit*': ecotrackProductText(cart.map(({ id, qty }) => `${byId[id].title} x${qty}`).join(' + ')),
     'poids (kg)': 0,
     'montant du colis*': serverTotal,
     'remarque': '',
     'FRAGILE\n( si oui mettez OUI sinon laissez vide )': '',
     'ECHANGE\n( si oui mettez OUI sinon laissez vide )': '',
     'PICK UP\n( si oui mettez OUI sinon laissez vide )': '',
-    'RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )': 'OUI',
+    'RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )': '',
     'STOP DESK\n( si oui mettez OUI sinon laissez vide )': checkoutData.shipmentType === 'office' ? 'OUI' : '',
     'Lien map': ''
   };

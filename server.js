@@ -5,6 +5,29 @@ const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { DatabaseSync } = require('node:sqlite');
 const communes = require(path.join(__dirname, 'data/algeria-communes-58-wilayas.json'));
+const ecotrackLocations = require(path.join(__dirname, 'data/ecotrack-locations.json'));
+const normalizeLocation = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const limitEcotrackProductText = value => {
+  const characters = Array.from(String(value || ''));
+  return characters.length <= 254 ? characters.join('') : `${characters.slice(0, 253).join('')}…`;
+};
+const ecotrackCommuneNames = new Map();
+for (const location of ecotrackLocations.communes) {
+  const key = `${location.wilaya_code}:${normalizeLocation(location.name)}`;
+  if (!ecotrackCommuneNames.has(key)) ecotrackCommuneNames.set(key, location.name);
+}
+for (const alias of ecotrackLocations.aliases || []) {
+  ecotrackCommuneNames.set(`${alias.wilaya_code}:${normalizeLocation(alias.source)}`, alias.target);
+}
+function canonicalEcotrackLocation(customer) {
+  const code = String(Number(customer.wilayaCode)).padStart(2, '0');
+  const wilaya = ecotrackLocations.wilayas[code] || '';
+  const selected = communes.find(item => item.wilaya_code === code && Number(item.id) === Number(customer.communeId)) ||
+    communes.find(item => item.wilaya_code === code && [item.commune_name_ascii, item.commune_name].some(name => normalizeLocation(name) === normalizeLocation(customer.commune || customer.communeArabic)));
+  const candidates = [selected?.commune_name_ascii, selected?.commune_name, customer.commune, customer.communeArabic];
+  const commune = candidates.map(name => ecotrackCommuneNames.get(`${code}:${normalizeLocation(name)}`)).find(Boolean) || '';
+  return { code: wilaya ? String(Number(code)) : '', wilaya, commune, valid: Boolean(wilaya && commune) };
+}
 // Ecotrack Stop Desk locations supplied by the carrier. Match normalized
 // commune names so Arabic/Latin spelling and accents in the source data work.
 const stopDeskLocations = [
@@ -12,7 +35,12 @@ const stopDeskLocations = [
 ];
 const normalizeCommune = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const stopDeskKeys = new Set(stopDeskLocations.map(([code,name]) => `${code}:${normalizeCommune(name)}`));
-function hasStopDesk(wilayaCode, commune) { return stopDeskKeys.has(`${Number(wilayaCode)}:${normalizeCommune(commune?.commune_name_ascii || commune?.commune_name || commune)}`); }
+function hasStopDesk(wilayaCode, commune) {
+  const code = String(Number(wilayaCode)).padStart(2, '0');
+  const sourceName = commune?.commune_name_ascii || commune?.commune_name || commune;
+  const carrierName = ecotrackCommuneNames.get(`${code}:${normalizeLocation(sourceName)}`) || sourceName;
+  return stopDeskKeys.has(`${Number(code)}:${normalizeCommune(carrierName)}`);
+}
 
 const ROOT = __dirname;
 const DATA_DIR = process.env.GHAZAL_DATA_DIR || path.join(ROOT, '.data');
@@ -653,7 +681,33 @@ function transitionOrder(reference, status, notes, user) {
     db.prepare('UPDATE orders SET status=?,notes=?,updated_at=? WHERE id=?').run(status, notes == null ? order.notes : String(notes), stamp, order.id); db.prepare('INSERT INTO order_events (order_id,status,note,user_id,created_at) VALUES (?,?,?,?,?)').run(order.id,status,String(notes || ''),user?.id || null,stamp); audit(user,'status_change','order',reference,{from:order.status,to:status}); db.exec('COMMIT'); return order;
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
-function orderView(order) { const customer = parse(order.customer_json); const items = db.prepare('SELECT book_id id,title,qty,unit_price FROM order_items WHERE order_id=?').all(order.id); const timeline = db.prepare('SELECT status,note,created_at,user_id FROM order_events WHERE order_id=? ORDER BY created_at').all(order.id); return { ...order, placedAt: order.created_at, customer, shipping: { type: order.shipment_type, wilayaCode: customer.wilayaCode, wilaya: customer.wilaya, commune: customer.commune, price: order.delivery }, items, timeline, ecotrackRow: { 'reference commande': order.reference, 'nom et prenom du destinataire*': customer.customer || '', 'telephone*': customer.phone || '', 'telephone 2': customer.phone2 || '', 'code wilaya*': customer.wilayaCode || '', 'wilaya de livraison': customer.wilaya || '', 'commune de livraison*': customer.commune || '', 'adresse de livraison*': [customer.address, customer.communeArabic || customer.commune, customer.wilaya].filter(Boolean).join('، '), 'produit*': items.map(item => `${item.title} x${item.qty}`).join(' + '), 'poids (kg)': 0, 'montant du colis*': order.total, 'remarque': order.notes || '', 'FRAGILE\n( si oui mettez OUI sinon laissez vide )': '', 'ECHANGE\n( si oui mettez OUI sinon laissez vide )': '', 'PICK UP\n( si oui mettez OUI sinon laissez vide )': '', 'RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )': 'OUI', 'STOP DESK\n( si oui mettez OUI sinon laissez vide )': order.shipment_type === 'office' ? 'OUI' : '', 'Lien map': customer.mapLink || '' } }; }
+function orderView(order) {
+  const customer = parse(order.customer_json);
+  const items = db.prepare('SELECT book_id id,title,qty,unit_price FROM order_items WHERE order_id=?').all(order.id);
+  const timeline = db.prepare('SELECT status,note,created_at,user_id FROM order_events WHERE order_id=? ORDER BY created_at').all(order.id);
+  const location = canonicalEcotrackLocation(customer);
+  const ecotrackRow = {
+    'reference commande': order.reference,
+    'nom et prenom du destinataire*': customer.customer || '',
+    'telephone*': customer.phone || '',
+    'telephone 2': customer.phone2 || '',
+    'code wilaya*': location.code,
+    'wilaya de livraison': location.wilaya,
+    'commune de livraison*': location.commune,
+    'adresse de livraison*': [customer.address, location.commune, location.wilaya].filter(Boolean).join('، '),
+    'produit*': limitEcotrackProductText(items.map(item => `${item.title} x${item.qty}`).join(' + ')),
+    'poids (kg)': 0,
+    'montant du colis*': order.total,
+    'remarque': order.notes || '',
+    'FRAGILE\n( si oui mettez OUI sinon laissez vide )': '',
+    'ECHANGE\n( si oui mettez OUI sinon laissez vide )': '',
+    'PICK UP\n( si oui mettez OUI sinon laissez vide )': '',
+    'RECOUVREMENT\n( si oui mettez OUI sinon laissez vide )': '',
+    'STOP DESK\n( si oui mettez OUI sinon laissez vide )': order.shipment_type === 'office' ? 'OUI' : '',
+    'Lien map': customer.mapLink || ''
+  };
+  return { ...order, placedAt: order.created_at, customer, shipping: { type: order.shipment_type, wilayaCode: customer.wilayaCode, wilaya: customer.wilaya, commune: customer.commune, price: order.delivery }, items, timeline, ecotrackLocationValid: location.valid, ecotrackRow };
+}
 function publicOrderView(order) { const view = orderView(order); return { reference:view.reference, status:view.status, total:view.total, created_at:view.created_at, updated_at:view.updated_at, placedAt:view.placedAt, timeline:view.timeline.map(event => ({ status:event.status, created_at:event.created_at })) }; }
 
 async function api(req, res, url) {
