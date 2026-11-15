@@ -516,3 +516,8 @@ img.cover.edition-image{display:block;padding:0;object-fit:cover;object-position
 .publisher-monogram--image:has(img[src*="al-farabi-2026"]) img{transform:scale(.72)}
 .publisher:hover .publisher-monogram--image:has(img[src*="al-farabi-2026"]) img,.publisher:focus-visible .publisher-monogram--image:has(img[src*="al-farabi-2026"]) img{transform:scale(.75)}
 @media(prefers-reduced-motion:reduce){.publisher,.publisher-monogram--image img{transition:none}}
+
+/* These two supplied logo files have unusually tall canvases; contain only these marks. */
+.publisher--contained-logo{display:flex!important;flex-direction:column;justify-content:center;gap:10px!important}
+.publisher--contained-logo .publisher-monogram--image{display:block!important;position:relative;width:100px!important;height:72px!important;flex:0 0 72px!important;overflow:hidden!important;margin:0!important;padding:0!important}
+.publisher--contained-logo .publisher-monogram--image img{display:block!important;position:absolute;inset:0;width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;object-fit:contain!important;object-position:center!important;transform:none!important;border-radius:0!important}

@@ -202,6 +202,7 @@ function publisherMark(publisher) {
 }
 function publisherCardClass(publisher) {
   const name = String(publisher?.name || '').trim();
+  if (name.includes('كنعان') || name.includes('مصر العربية')) return ' publisher--contained-logo';
   if (name === 'صفحة 7') return ' publisher--compact-logo publisher--safha';
   return ['آفاق للنشر والتوزيع','افاق للنشر والتوزيع','آفاق للنشر و التوزيع','افاق للنشر و التوزيع','دار الكتاب الجديد المتحدة'].includes(name) ? ' publisher--compact-logo' : '';
 }
