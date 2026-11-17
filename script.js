@@ -310,6 +310,30 @@ function shuffleBooks(list) {
   }
   return pool;
 }
+function featuredPublisherBooks(publisher, list) {
+  // Keep one selection for the day so background catalog refreshes do not
+  // reshuffle the shelf, while giving larger publishers a fresh set tomorrow.
+  const today = new Date();
+  const day = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+  const seedText = `${day}:${publisher}:${list.map(book => book.id).join('|')}`;
+  let seed = 2166136261;
+  for (let index = 0; index < seedText.length; index += 1) {
+    seed = Math.imul(seed ^ seedText.charCodeAt(index), 16777619);
+  }
+  const random = () => {
+    seed += 0x6D2B79F5;
+    let value = seed;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+  const pool = [...list];
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    [pool[index], pool[swap]] = [pool[swap], pool[index]];
+  }
+  return pool.slice(0, 8);
+}
 // The "قراءة جميلة بسعر هادئ" shelf reshuffles on every visit so the same
 // inexpensive titles do not sit there forever. The page-load cache keeps the
 // order stable while the catalog refreshes in the background.
@@ -1147,7 +1171,7 @@ function renderHomeSections() {
 }
 function renderFeaturedPublishers() {
   const target = document.getElementById('publisher-featured'); if (!target) return;
-  const active = (publisherFeatures || []).filter(item => item.active !== false).map(item => ({ ...item, books: books.filter(book => book.publisher === item.publisher) }));
+  const active = (publisherFeatures || []).filter(item => item.active !== false).map(item => ({ ...item, books: featuredPublisherBooks(item.publisher, books.filter(book => book.publisher === item.publisher)) }));
   target.hidden = !active.length;
   target.innerHTML = active.map(item => { const publisher = publishers.find(entry => entry.name === item.publisher); const logo = item.id === 'mahrousa' ? 'assets/publishers/al-mahrousa.png' : item.logo || (publisher?.logo && /^(data:|\/|https?:|assets\/)/i.test(publisher.logo) ? publisher.logo : '') || PUBLISHER_LOGO_ASSETS[String(item.publisher || '').trim()] || ''; const accent = /^#[\da-f]{6}$/i.test(item.accent || '') ? item.accent : '#8f5e3b'; const surface = /^#[\da-f]{6}$/i.test(item.surface || '') ? item.surface : '#eee2ce'; const ink = /^#[\da-f]{6}$/i.test(item.ink || '') ? item.ink : '#1b1915'; const background = /^\/covers\/[a-f\d]{64}\.[a-z0-9]+$/i.test(item.backgroundImage || '') ? item.backgroundImage : ''; return `<article class="publisher-feature publisher-feature--${escapeHtml(item.id)}" data-feature-background="${escapeHtml(background)}" style="--publisher-accent:${accent};--publisher-surface:${surface};--publisher-ink:${ink};--publisher-bg-image:none;background:${surface};color:${ink}"><div class="publisher-feature-visual" id="publisher-shelf-${escapeHtml(item.id)}"></div><div class="publisher-feature-copy">${logo ? `<div class="publisher-feature-logo"><img src="${escapeHtml(logo)}" alt="شعار ${escapeHtml(item.publisher)}" loading="lazy" decoding="async" /></div>` : `<div class="publisher-feature-mark" aria-hidden="true">${escapeHtml(publisher?.logo || item.mark || item.publisher.slice(0,1))}</div>`}<p class="publisher-feature-kicker">${escapeHtml(item.kicker || 'دار نشر مميزة')}</p><h2>${escapeHtml(item.publisher)}</h2><p class="publisher-feature-description">${escapeHtml(item.description || '')}</p><a class="publisher-feature-link" href="#publisher/${encodeURIComponent(item.publisher)}">كل إصدارات الدار <span>←</span></a></div></article>`; }).join('');
   const deferredBackgrounds = [...target.querySelectorAll('[data-feature-background]')].filter(feature => feature.dataset.featureBackground);
