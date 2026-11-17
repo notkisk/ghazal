@@ -960,6 +960,12 @@ const staticServer = http.createServer(async (req,res) => {
     return fs.createReadStream(filePath).pipe(res);
   }
   let filePath = path.normalize(path.join(ROOT, url.pathname === '/' ? 'index.html' : url.pathname)); if (!filePath.startsWith(ROOT) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) filePath = path.join(ROOT,'index.html');
+  if (filePath === path.join(ROOT,'index.html')) {
+    const pixelId = /^\d{5,32}$/.test(String(process.env.META_PIXEL_ID || '').trim()) ? String(process.env.META_PIXEL_ID).trim() : '';
+    const html = fs.readFileSync(filePath, 'utf8').replace('__META_PIXEL_ID__', pixelId);
+    res.writeHead(200, { 'content-type':'text/html; charset=utf-8', 'cache-control':'no-cache', 'x-content-type-options':'nosniff', 'x-frame-options':'DENY', 'referrer-policy':'strict-origin-when-cross-origin', 'permissions-policy':'camera=(), microphone=(), geolocation=()' });
+    return res.end(html);
+  }
   const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.xml':'application/xml; charset=utf-8', '.txt':'text/plain; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.avif':'image/avif', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
   const isAsset = /\.(?:css|js|png|jpg|jpeg|webp|svg|ico|xlsx)$/i.test(filePath);
   const versionedAsset = isAsset && url.searchParams.has('v');

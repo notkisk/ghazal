@@ -270,6 +270,28 @@ test('cancelling an unconfirmed order releases reservation without reducing stoc
   assert.equal(db.prepare('SELECT reserved FROM books WHERE id=?').get('letters').reserved, 0);
 });
 
+test('storefront exposes the configured Meta Pixel ID without exposing the API token', async () => {
+  const previousPixelId = process.env.META_PIXEL_ID;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  process.env.META_PIXEL_ID = '1836431484220907';
+  process.env.META_ACCESS_TOKEN = 'server-only-test-token';
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/`);
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /data-meta-pixel-id="1836431484220907"/);
+    assert.doesNotMatch(html, /__META_PIXEL_ID__|server-only-test-token/);
+    assert.equal(response.headers.get('cache-control'), 'no-cache');
+  } finally {
+    await closeServer();
+    if (previousPixelId === undefined) delete process.env.META_PIXEL_ID;
+    else process.env.META_PIXEL_ID = previousPixelId;
+    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
+    else process.env.META_ACCESS_TOKEN = previousAccessToken;
+  }
+});
+
 test('Meta Purchase conversion is sent once and duplicate event ids are suppressed', async () => {
   process.env.META_PIXEL_ID = 'pixel-test';
   process.env.META_ACCESS_TOKEN = 'token-test';
