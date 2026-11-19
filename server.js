@@ -572,7 +572,7 @@ function sendCatalog(req, res) {
   return res.end(gzip ? entry.gzip : entry.raw);
 }
 async function sendMetaPurchase(body, reference, total, items, request) {
-  const pixels = String(process.env.META_PIXEL_IDS || process.env.META_PIXEL_ID || '').split(',').map(value => value.trim()).filter(Boolean);
+  const pixels = [...new Set(String(process.env.META_PIXEL_IDS || process.env.META_PIXEL_ID || '').split(',').map(value => value.trim()).filter(Boolean))];
   const tokens = String(process.env.META_ACCESS_TOKENS || process.env.META_ACCESS_TOKEN || '').split(',').map(value => value.trim());
   const destinations = pixels.map((pixel, index) => ({ pixel, token: tokens[index] })).filter(item => item.token);
   const eventId = String(body.metaEventId || reference); const previous = db.prepare('SELECT status FROM conversion_events WHERE event_id=?').get(eventId); if (previous?.status === 'sent' || metaEventsInFlight.has(eventId)) return; if (!destinations.length) { recordConversion(eventId,'Purchase',reference,'meta','skipped',{reason:'not_configured'}); return; }
