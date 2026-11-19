@@ -23,7 +23,7 @@ Requires Node >= 22.5 (`node:sqlite` `DatabaseSync`). On Node 22.5–22.12, run 
 - `GHAZAL_DATA_DIR` — SQLite location (default `.data/ghazal.sqlite`). `.data/` is gitignored; never commit it.
 - `GHAZAL_COVERS_DIR` — cover files (default `<GHAZAL_DATA_DIR>/covers`). Also outside the repo; back it up with the database.
 - `GHAZAL_ADMIN_PASSWORD` / `GHAZAL_ADMIN_EMAIL` — create owner on first start (signup then closes). Signup/API require 12+ characters; `admin:reset` accepts 10+.
-- `FORCE_HTTPS=true`, `META_PIXEL_ID`, `META_ACCESS_TOKEN`, `META_GRAPH_VERSION`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — optional production integrations; keep tokens server-side.
+- `FORCE_HTTPS=true`, `META_PIXEL_ID`/`META_ACCESS_TOKEN` (single Pixel) or comma-separated `META_PIXEL_IDS`/`META_ACCESS_TOKENS` (paired by position for multiple Pixels), `META_GRAPH_VERSION`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — optional production integrations; keep tokens server-side.
 - Opening `index.html` directly (`file:`) uses a localStorage fallback. Full checkout/admin/order lookup require `npm start`.
 
 ## Architecture
