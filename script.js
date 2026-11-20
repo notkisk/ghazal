@@ -250,6 +250,11 @@ function trackMeta(eventName, params = {}) {
   if (typeof window.fbq === 'function') window.fbq('track', eventName, params, params.event_id ? { eventID: params.event_id } : undefined);
   window.dispatchEvent(new CustomEvent('ghazal:analytics', { detail: { eventName, params } }));
 }
+function metaCookie(name) {
+  const prefix = `${name}=`;
+  const entry = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
+  return entry ? entry.slice(prefix.length) : '';
+}
 function installMetaPixel() {
   const pixelIds = [...new Set(String(document.documentElement.dataset.metaPixelId || readStorage('ghazal.metaPixelId', '')).split(',').map(id => id.trim()).filter(id => /^\d{5,32}$/.test(id)))];
   if (!pixelIds.length || typeof window.fbq === 'function') return;
@@ -694,7 +699,8 @@ $('#checkout-confirm').addEventListener('click', async () => {
       customer: { customer: checkoutData.customer, phone: checkoutData.phone, address: String(checkoutData.address || '').trim() },
       items: cart.map(item => ({ id: item.id, qty: item.qty })),
       shipping: { type: checkoutData.shipmentType, wilayaCode: Number(checkoutData.wilayaCode), wilaya: checkoutData.wilaya, communeId: Number(checkoutData.communeId), commune: checkoutData.city, price: checkoutData.shippingCost },
-      discountCode: checkoutData.discountCode || '', metaEventId
+      discountCode: checkoutData.discountCode || '', metaEventId,
+      metaUserData: { fbc: metaCookie('_fbc'), fbp: metaCookie('_fbp') }
     });
     if (serverResult?.reference) reference = serverResult.reference;
   } catch (error) {

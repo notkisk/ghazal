@@ -578,8 +578,18 @@ async function sendMetaPurchase(body, reference, total, items, request) {
   const eventId = String(body.metaEventId || reference); const previous = db.prepare('SELECT status FROM conversion_events WHERE event_id=?').get(eventId); if (previous?.status === 'sent' || metaEventsInFlight.has(eventId)) return; if (!destinations.length) { recordConversion(eventId,'Purchase',reference,'meta','skipped',{reason:'not_configured'}); return; }
   metaEventsInFlight.add(eventId);
   const rawPhone = String(body.customer?.phone || '').replace(/\D/g, ''); const phone = rawPhone.startsWith('0') ? `213${rawPhone.slice(1)}` : rawPhone; const hashedPhone = phone ? hash(phone) : undefined;
+  const metaUserData = body.metaUserData && typeof body.metaUserData === 'object' ? body.metaUserData : {};
+  const validMetaCookie = value => typeof value === 'string' && value.length <= 200 && /^fb\.\d+\.\d+\.[A-Za-z0-9_-]+$/.test(value) ? value : undefined;
+  const clientIp = process.env.GHAZAL_TRUST_PROXY === 'true' ? requestIp(request) : 'unknown';
+  const userData = {
+    ...(hashedPhone ? { ph:[hashedPhone], external_id:[hash(`ghazal-customer:${phone}`)] } : {}),
+    client_user_agent:request.headers['user-agent'] || '',
+    ...(clientIp !== 'unknown' && clientIp !== '::1' && clientIp !== '127.0.0.1' ? { client_ip_address:clientIp } : {}),
+    ...(validMetaCookie(metaUserData.fbc) ? { fbc:validMetaCookie(metaUserData.fbc) } : {}),
+    ...(validMetaCookie(metaUserData.fbp) ? { fbp:validMetaCookie(metaUserData.fbp) } : {})
+  };
   const protocol = request.headers['x-forwarded-proto'] || 'https';
-  const payload = { data: [{ event_name:'Purchase', event_time:Math.floor(Date.now() / 1000), event_id:eventId, action_source:'website', event_source_url:`${protocol}://${request.headers.host || 'localhost'}/`, user_data:{ ph:hashedPhone ? [hashedPhone] : [], client_user_agent:request.headers['user-agent'] || '' }, custom_data:{ currency:'DZD', value:Number(total), order_id:reference, content_type:'product', content_ids:items.map(item => item.id) } }] };
+  const payload = { data: [{ event_name:'Purchase', event_time:Math.floor(Date.now() / 1000), event_id:eventId, action_source:'website', event_source_url:`${protocol}://${request.headers.host || 'localhost'}/`, user_data:userData, custom_data:{ currency:'DZD', value:Number(total), order_id:reference, content_type:'product', content_ids:items.map(item => item.id) } }] };
   try {
     const results = await Promise.all(destinations.map(async ({ pixel, token }) => {
       const response = await fetch(`https://graph.facebook.com/${process.env.META_GRAPH_VERSION || 'v22.0'}/${encodeURIComponent(pixel)}/events?access_token=${encodeURIComponent(token)}`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload) });
