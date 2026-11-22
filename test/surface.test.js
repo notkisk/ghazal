@@ -74,6 +74,12 @@ test('collection carousels use a stable daily shuffled order', () => {
   assert.match(script, /items: collectionBooksForCarousel\(collection\)/);
 });
 
+test('direct subgenre routes rerender after the catalog loads', () => {
+  const script = read('script.js');
+  assert.ok(script.includes('genre|subgenre|collection|publisher|book|author'));
+  assert.match(read('index.html'), /script\.js\?v=20261122-3/);
+});
+
 test('background catalog refresh does not replay reveal animations', () => {
   const script = read('script.js');
   assert.match(script, /const signature = JSON\.stringify\(payload \?\? null\)/);
@@ -140,7 +146,7 @@ test('homepage best sellers use confirmed orders and a stable carousel fallback'
 test('cache-busting versions match the latest edited assets', () => {
   const index = read('index.html');
   const adminHtml = read('admin.html');
-  assert.match(index, /script\.js\?v=20261122-2/);
+  assert.match(index, /script\.js\?v=20261122-3/);
   assert.match(index, /enhancements\.css\?v=20261115-4/);
   assert.match(index, /api\.js\?v=20261112-1/);
   assert.match(adminHtml, /admin-import-utils\.js\?v=20261112-4/);

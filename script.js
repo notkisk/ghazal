@@ -153,7 +153,7 @@ function applyCatalogPayload(payload, options = {}) {
     if (location.hash === '#publishers') renderPublishersPage();
     if (location.hash === '#bestsellers') renderBestsellersPage();
     if (location.hash === '#favorites') renderFavoritesPage();
-    if (/^#(genre|collection|publisher|book|author)\//.test(location.hash)) showRoute();
+    if (/^#(genre|subgenre|collection|publisher|book|author)\//.test(location.hash)) showRoute();
     lastCatalogSignature = signature;
   } finally {
     suppressRevealEntrance = false;
