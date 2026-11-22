@@ -132,7 +132,7 @@ test('homepage best sellers use confirmed orders and a stable carousel fallback'
 test('cache-busting versions match the latest edited assets', () => {
   const index = read('index.html');
   const adminHtml = read('admin.html');
-  assert.match(index, /script\.js\?v=20261117-1/);
+  assert.match(index, /script\.js\?v=20261122-1/);
   assert.match(index, /enhancements\.css\?v=20261115-4/);
   assert.match(index, /api\.js\?v=20261112-1/);
   assert.match(adminHtml, /admin-import-utils\.js\?v=20261112-4/);

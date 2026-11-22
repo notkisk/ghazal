@@ -393,7 +393,9 @@ function watchShelfCarousel(carousel) {
 function renderCarousel(targetId, carouselId, list, limit = 12) {
   const target = document.getElementById(targetId); if (!target) return;
   target.querySelectorAll('.shelf-carousel-viewport,.shelf-carousel-track').forEach(element => shelfSizeWatcher?.unobserve(element));
-  const items = list.filter(Boolean).slice(0, limit);
+  // A shelf is for books the customer can buy now. Filter before applying the
+  // limit so sold-out books do not consume carousel slots.
+  const items = list.filter(book => book && Number(book.stock) > 0).slice(0, limit);
   if (!items.length) { target.innerHTML = ''; return; }
   target.innerHTML = `<div class="shelf-carousel" data-carousel="${carouselId}"><div class="shelf-carousel-viewport" tabindex="0" role="group" aria-label="رف كتب قابل للتمرير"><div class="shelf-carousel-track">${items.map(shelfCardTemplate).join('')}</div></div><div class="shelf-carousel-controls" dir="rtl"><button class="shelf-carousel-arrow" type="button" data-shelf-prev="${carouselId}" aria-label="الكتب السابقة">→</button><span class="shelf-carousel-count" aria-live="polite">1 / ${items.length}</span><button class="shelf-carousel-arrow" type="button" data-shelf-next="${carouselId}" aria-label="الكتب التالية">←</button></div></div>`;
   const carousel = target.querySelector('.shelf-carousel');
@@ -1143,7 +1145,7 @@ function homeSectionEntries(section) {
 }
 function renderHomeSections() {
   $$('[data-home-section]').forEach(node => node.remove());
-  const prepared = (Array.isArray(homeSections) ? homeSections : []).map(homeSectionEntries).filter(entry => entry && entry.items.length);
+  const prepared = (Array.isArray(homeSections) ? homeSections : []).map(homeSectionEntries).filter(entry => entry).map(entry => ({ ...entry, items: entry.items.filter(book => Number(book.stock) > 0) })).filter(entry => entry.items.length);
   if (!prepared.length) return;
   const groups = new Map();
   for (const entry of prepared) {
