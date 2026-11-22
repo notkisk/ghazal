@@ -66,6 +66,14 @@ test('value shelf reshuffles its books and keeps a stable page-load order', () =
   assert.match(script, /valueShelfBooks\(books\.filter\(book => Number\(book\.price\) <= 1500\)\)/);
 });
 
+test('collection carousels use a stable daily shuffled order', () => {
+  const script = read('script.js');
+  assert.match(script, /function collectionBooksForCarousel\(/);
+  assert.match(script, /const day = `\$\{today\.getFullYear\(\)\}-\$\{today\.getMonth\(\) \+ 1\}-\$\{today\.getDate\(\)\}`/);
+  assert.match(script, /collectionBooksForCarousel\(collection\)\.filter/);
+  assert.match(script, /items: collectionBooksForCarousel\(collection\)/);
+});
+
 test('background catalog refresh does not replay reveal animations', () => {
   const script = read('script.js');
   assert.match(script, /const signature = JSON\.stringify\(payload \?\? null\)/);
@@ -132,7 +140,7 @@ test('homepage best sellers use confirmed orders and a stable carousel fallback'
 test('cache-busting versions match the latest edited assets', () => {
   const index = read('index.html');
   const adminHtml = read('admin.html');
-  assert.match(index, /script\.js\?v=20261122-1/);
+  assert.match(index, /script\.js\?v=20261122-2/);
   assert.match(index, /enhancements\.css\?v=20261115-4/);
   assert.match(index, /api\.js\?v=20261112-1/);
   assert.match(adminHtml, /admin-import-utils\.js\?v=20261112-4/);

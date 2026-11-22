@@ -315,6 +315,30 @@ function shuffleBooks(list) {
   }
   return pool;
 }
+function collectionBooksForCarousel(collection, list = (collection.bookIds || []).map(id => byId[id]).filter(Boolean)) {
+  // Keep collection carousels consistent during the day, then give them a new
+  // order tomorrow so returning visitors see different titles over time.
+  const today = new Date();
+  const day = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+  const seedText = `${day}:${collection.id}:${list.map(book => book.id).join('|')}`;
+  let seed = 2166136261;
+  for (let index = 0; index < seedText.length; index += 1) {
+    seed = Math.imul(seed ^ seedText.charCodeAt(index), 16777619);
+  }
+  const random = () => {
+    seed += 0x6D2B79F5;
+    let value = seed;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+  const pool = [...list];
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    [pool[index], pool[swap]] = [pool[swap], pool[index]];
+  }
+  return pool;
+}
 function featuredPublisherBooks(publisher, list) {
   // Keep one selection for the day so background catalog refreshes do not
   // reshuffle the shelf, while giving larger publishers a fresh set tomorrow.
@@ -1108,7 +1132,7 @@ function renderHomeShelves() {
   const spotlightBooks = authorSpotlight ? authorSpotlight.bookIds.map(id => byId[id]).filter(Boolean) : [];
   $('#home-author-spotlight').innerHTML = authorSpotlight ? `<article class="author-spotlight"><div class="author-spotlight-art">${authorSpotlight.photo ? `<img src="${authorSpotlight.photo.startsWith('data:') ? authorSpotlight.photo : escapeHtml(authorSpotlight.photo)}" alt="${escapeHtml(authorSpotlight.name)}" loading="lazy" />` : `<span>${escapeHtml(authorSpotlight.name).slice(0,1)}</span>`}</div><div class="author-spotlight-copy"><p class="eyebrow">من رفوف الغزال</p><h2>صوت <em>${escapeHtml(authorSpotlight.name)}</em></h2><p>${escapeHtml(authorSpotlight.bio)}</p><a class="underlined-link" href="#author/${encodeURIComponent(authorSpotlight.name)}">اكتشف كتبه (${spotlightBooks.length}) ↖</a></div><div class="author-spotlight-books">${spotlightBooks.slice(0,3).map(cardTemplate).join('')}</div></article>` : '';
   $('#home-collection-shelves').innerHTML = shelves.map((collection, index) => { const href = collection.id === 'collection-recommended' ? '#catalog' : `#collection/${encodeURIComponent(collection.slug)}`; return `<div class="home-shelf-block"><div class="home-shelf-heading"><div><h3>${escapeHtml(collection.title)}</h3><p>${escapeHtml(collection.description || '')}</p></div><a class="underlined-link" href="${href}">عرض الكل ↖</a></div><div id="home-collection-grid-${index}"></div></div>`; }).join('');
-  shelves.forEach((collection, index) => renderCarousel(`home-collection-grid-${index}`, `collection-${index}`, collection.bookIds.map(id => byId[id]).filter(book => book && !bestSellerIds.has(String(book.id))).slice(0, 8)));
+  shelves.forEach((collection, index) => renderCarousel(`home-collection-grid-${index}`, `collection-${index}`, collectionBooksForCarousel(collection).filter(book => !bestSellerIds.has(String(book.id))).slice(0, 8)));
   const bestsellers = bestSellerBookIds.length
     ? bestSellerBookIds.map(id => byId[id]).filter(Boolean)
     : bestsellerFallbackBooks();
@@ -1139,7 +1163,7 @@ function homeSectionEntries(section) {
   if (section.type === 'collection') {
     const collection = collections.find(item => item.id === section.collectionId && item.active);
     if (!collection) return null;
-    return { section, collection, items: collection.bookIds.map(id => byId[id]).filter(Boolean) };
+    return { section, collection, items: collectionBooksForCarousel(collection) };
   }
   return { section, collection: null, items: (section.bookIds || []).map(id => byId[id]).filter(Boolean) };
 }
