@@ -86,6 +86,7 @@ const bookColumns = db.prepare('PRAGMA table_info(books)').all().map(column => c
 if (!bookColumns.includes('pages')) db.exec('ALTER TABLE books ADD COLUMN pages INTEGER');
 if (!bookColumns.includes('thumb')) db.exec('ALTER TABLE books ADD COLUMN thumb TEXT');
 if (!bookColumns.includes('display')) db.exec('ALTER TABLE books ADD COLUMN display TEXT');
+if (!bookColumns.includes('hidden')) db.exec('ALTER TABLE books ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0');
 // Orders keep their line-item snapshots (title, qty, price) even after a book is
 // removed from the catalog. Older databases enforced a FK to books, which made a
 // full catalog reset impossible without losing order history.
@@ -450,7 +451,7 @@ if (syncPublisherFeatureDesigns()) console.log('Ghazal: restored the designed pu
 const migratedCovers = migrateEmbeddedCovers();
 if (migratedCovers) console.log(`Ghazal: migrated ${migratedCovers} embedded cover(s) to ${COVERS_DIR}`);
 
-function bookList(url) { const q = String(url.searchParams.get('q') || '').trim(); const where = q ? `WHERE title LIKE @q OR author LIKE @q OR publisher LIKE @q OR genre LIKE @q OR isbn LIKE @q` : ''; return db.prepare(`SELECT *, stock-reserved AS available FROM books ${where} ORDER BY title`).all(q ? { q: `%${q}%` } : {}); }
+function bookList(url, includeHidden = false) { const q = String(url.searchParams.get('q') || '').trim(); const clauses = []; if (!includeHidden) clauses.push('hidden=0'); if (q) clauses.push('(title LIKE @q OR author LIKE @q OR publisher LIKE @q OR genre LIKE @q OR isbn LIKE @q)'); const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''; return db.prepare(`SELECT *, stock-reserved AS available FROM books ${where} ORDER BY title`).all(q ? { q: `%${q}%` } : {}); }
 function collectionList(includeInactive = false) { const collections = db.prepare(`SELECT * FROM collections ${includeInactive ? '' : 'WHERE active=1'} ORDER BY created_at`).all(); return collections.map(collection => ({ ...collection, active: Boolean(collection.active), homepage: Boolean(collection.homepage), bookIds: db.prepare('SELECT book_id FROM collection_books WHERE collection_id=? ORDER BY position').all(collection.id).map(item => item.book_id) })); }
 function contentValue(key, fallback) { const row = db.prepare('SELECT value_json FROM store_content WHERE key=?').get(key); return row ? parse(row.value_json, fallback) : fallback; }
 // Custom homepage carousels. Keep the value list in sync with script.js and
@@ -496,14 +497,14 @@ function deriveGenres(books, stored = {}) {
 function deriveBookGenres(books) {
   return [...new Set(books.map(book => String(book.genre || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
 }
-function catalogPayload() {
+function catalogPayload(includeHidden = false) {
   const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const weeklySales = db.prepare("SELECT book_id, SUM(qty) AS quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status='confirmed' AND orders.created_at >= ? GROUP BY book_id ORDER BY quantity DESC, MAX(orders.created_at) DESC LIMIT 8").all(weekStart);
   const allTimeSales = db.prepare("SELECT book_id, SUM(qty) AS quantity FROM order_items JOIN orders ON orders.id=order_items.order_id WHERE orders.status='confirmed' GROUP BY book_id ORDER BY quantity DESC, MAX(orders.created_at) DESC LIMIT 8").all();
   const bestSellerRows = weeklySales.length ? weeklySales : allTimeSales;
   const fallbackFeatured = contentValue('featured', []);
   const bestSellerBookIds = bestSellerRows.map(row => row.book_id);
-  const profiles = contentValue('authorProfiles', {}); const books = bookList(new URL('http://local/api/books'));
+  const profiles = contentValue('authorProfiles', {}); const books = bookList(new URL('http://local/api/books'), includeHidden);
   const genres = deriveGenres(books, contentValue('genres', {}));
   const bookGenres = deriveBookGenres(books);
   const authorSpotlight = Object.entries(profiles).map(([name, profile]) => ({ name, ...profile, bookIds: db.prepare('SELECT id FROM books WHERE author=? ORDER BY title').all(name).map(row => row.id) })).filter(author => author.bio && author.bookIds.length >= 2).sort((a,b) => Number(b.featured) - Number(a.featured) || b.bookIds.length - a.bookIds.length)[0] || null;
@@ -661,7 +662,7 @@ function createOrder(body) {
     const discountCode = String(body.discountCode || '').trim();
     if (discountCode && !contentValue('discounts', []).some(item => item.active !== false && String(item.code || '').trim().toUpperCase() === discountCode.toUpperCase())) throw new Error('invalid_discount_code');
     for (const [id, qty] of itemsById) {
-      const book = db.prepare('SELECT * FROM books WHERE id=?').get(id); if (!book) throw new Error('book_not_found');
+      const book = db.prepare('SELECT * FROM books WHERE id=?').get(id); if (!book || book.hidden) throw new Error('book_not_found');
       const itemDiscount = discountAmount(book, discountCode); items.push({ qty, book, itemDiscount }); subtotal += book.price * qty; discount += itemDiscount * qty;
     }
     if (discountCode && discount <= 0) throw new Error('invalid_discount_code');
@@ -785,7 +786,8 @@ async function api(req, res, url) {
       } catch (error) { db.exec('ROLLBACK'); throw error; }
     }
     if (req.method === 'DELETE' && url.pathname === '/api/admin/orders') { const body = await readBody(req); const references = Array.isArray(body.references) ? [...new Set(body.references.map(value => String(value || '').trim()).filter(Boolean))] : []; if (!references.length || references.length > 500 || references.some(reference => !/^GZ-[A-Z0-9-]{8,32}$/.test(reference))) return send(res,400,{error:'invalid_orders'}); const placeholders = references.map(() => '?').join(','); const matches = db.prepare(`SELECT id,reference FROM orders WHERE reference IN (${placeholders})`).all(...references); if (matches.length !== references.length) return send(res,404,{error:'orders_not_found'}); db.exec('BEGIN IMMEDIATE'); try { const release = db.prepare('SELECT * FROM reservations WHERE order_id=? AND released_at IS NULL'); const releaseBook = db.prepare('UPDATE books SET reserved=MAX(0,reserved-?),updated_at=? WHERE id=?'); const remove = db.prepare('DELETE FROM orders WHERE id=?'); for (const order of matches) { for (const item of release.all(order.id)) releaseBook.run(item.qty,now(),item.book_id); remove.run(order.id); audit(user,'delete','order',order.reference,{bulk:true}); } db.exec('COMMIT'); return send(res,200,{ok:true,deleted:matches.length,references:matches.map(order=>order.reference)}); } catch (error) { db.exec('ROLLBACK'); throw error; } }
-    if (req.method === 'GET' && url.pathname === '/api/admin/catalog') { const viewer = requirePermission(req,res,'view_catalog'); if (!viewer) return; return send(res, 200, catalogPayload()); }
+    if (req.method === 'GET' && url.pathname === '/api/admin/catalog') { const viewer = requirePermission(req,res,'view_catalog'); if (!viewer) return; return send(res, 200, catalogPayload(true)); }
+    if (req.method === 'PATCH' && url.pathname.startsWith('/api/admin/books/') && url.pathname.endsWith('/visibility')) { const editor = requirePermission(req,res,'edit_catalog'); if (!editor) return; const bookId = decodeURIComponent(url.pathname.split('/').at(-2)); const body = await readBody(req); if (typeof body.hidden !== 'boolean') return send(res,400,{error:'invalid_visibility'}); const book = db.prepare('SELECT id,title,hidden FROM books WHERE id=?').get(bookId); if (!book) return send(res,404,{error:'not_found'}); db.prepare('UPDATE books SET hidden=?,updated_at=? WHERE id=?').run(body.hidden ? 1 : 0,now(),bookId); audit(editor,body.hidden ? 'hide' : 'restore','book',bookId,{title:book.title}); return send(res,200,{ok:true,hidden:body.hidden}); }
     if (req.method === 'GET' && url.pathname === '/api/admin/inventory-report') { const viewer = requirePermission(req,res,'view_catalog'); if (!viewer) return; return send(res,200,{books:inventoryReportRows()}); }
     if (req.method === 'GET' && url.pathname === '/api/admin/sales-report') { const viewer = requirePermission(req,res,'view_finance'); if (!viewer) return; try { return send(res,200,salesReportRows(url.searchParams.get('from') || '',url.searchParams.get('to') || '',url.searchParams.get('scope') || 'all')); } catch (error) { return send(res,400,{error:error.message || 'invalid_sales_report_range'}); } }
     if (req.method === 'POST' && url.pathname === '/api/admin/covers') {
@@ -869,7 +871,7 @@ async function api(req, res, url) {
           const homeSections = sanitizeHomeSections(body.homeSections, validBookIds, validCollectionIds);
           db.prepare('INSERT INTO store_content (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at').run('homeSections',json(homeSections),stamp);
         }
-        audit(user,'update','catalog','store',{books:books.length,publishers:publishers.length}); db.exec('COMMIT'); if (books.some(b => /^https?:\/\//i.test(b?.image || ''))) setTimeout(() => cacheRemoteCovers().catch(() => {}), 100); return send(res,200,catalogPayload());
+        audit(user,'update','catalog','store',{books:books.length,publishers:publishers.length}); db.exec('COMMIT'); if (books.some(b => /^https?:\/\//i.test(b?.image || ''))) setTimeout(() => cacheRemoteCovers().catch(() => {}), 100); return send(res,200,catalogPayload(true));
       } catch (error) { db.exec('ROLLBACK'); throw error; }
     }
     if (req.method === 'GET' && url.pathname === '/api/admin/collections') return send(res, 200, { collections: collectionList(true) });
